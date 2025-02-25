@@ -1,5 +1,3 @@
-/// Attempt to make the FCircuit generic over the merkle tree implementation.
-/// Not successful for now.
 use std::{borrow::Borrow, marker::PhantomData};
 
 use ark_crypto_primitives::{
