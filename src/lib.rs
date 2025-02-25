@@ -1,6 +1,8 @@
 pub mod circuits;
 mod utils;
 
+pub mod tests;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -10,5 +12,5 @@ extern "C" {
 
 #[wasm_bindgen]
 pub fn greet() {
-    alert("Hello, fold-plasma!");
+    alert("Hello, plasma-fold!");
 }

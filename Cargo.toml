@@ -1,5 +1,5 @@
 [package]
-name = "fold-plasma"
+name = "plasma-fold"
 version = "0.1.0"
 edition = "2018"
 
@@ -26,6 +26,7 @@ ark-bn254 = "0.5.0"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"
+web-sys = { version = "0.3.77", features = ["console"] }
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
