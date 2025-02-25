@@ -12,26 +12,45 @@ use ark_crypto_primitives::{
 };
 
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::Boolean};
-use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
+use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use folding_schemes::frontend::FCircuit;
 
 #[derive(Debug, Clone)]
-pub struct Deposit<P: Config> {
-    deposit_path: Path<P>,
-    deposit_root: P::InnerDigest,
+pub struct Deposit<P: Config, F: PrimeField> {
+    pub deposit_path: Path<P>,
+    pub deposit_root: P::InnerDigest,
+    pub deposit_value: [F; 2],
 }
 
 #[derive(Debug, Clone)]
 pub struct DepositVar<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> {
-    deposit_path: PathVar<P, F, PG>,
-    deposit_root: PG::InnerDigest,
-    deposit_value: [FpVar<F>; 2],
+    pub deposit_path: PathVar<P, F, PG>,
+    pub deposit_root: PG::InnerDigest,
+    pub deposit_value: [FpVar<F>; 2],
+}
+
+impl<P: Config, F: PrimeField> Default for Deposit<P, F> {
+    fn default() -> Self {
+        let default_deposit_path = Path::default();
+        let default_deposit_root = P::InnerDigest::default();
+        let default_deposit_value = [F::ZERO, F::ZERO];
+        return Deposit {
+            deposit_path: default_deposit_path,
+            deposit_root: default_deposit_root,
+            deposit_value: default_deposit_value,
+        };
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PlasmaFoldExternalInputs<P: Config, F: PrimeField> {
+    pub deposit: Deposit<P, F>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PlasmaFoldExternalInputsVar<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>> {
-    deposit_var: DepositVar<P, F, PG>,
+    pub deposit_var: DepositVar<P, F, PG>,
 }
 
 #[derive(Clone, Debug)]
@@ -82,26 +101,45 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct PlasmaFoldExternalInputs<P: Config> {
-    deposit: Deposit<P>,
-}
-
-impl<P: Config> Default for PlasmaFoldExternalInputs<P> {
+impl<P: Config, F: PrimeField> Default for PlasmaFoldExternalInputs<P, F> {
     fn default() -> Self {
-        todo!()
+        PlasmaFoldExternalInputs {
+            deposit: Deposit::default(),
+        }
     }
 }
 
 impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
-    AllocVar<PlasmaFoldExternalInputs<P>, F> for PlasmaFoldExternalInputsVar<P, F, PG>
+    AllocVar<PlasmaFoldExternalInputs<P, F>, F> for PlasmaFoldExternalInputsVar<P, F, PG>
 {
-    fn new_variable<T: Borrow<PlasmaFoldExternalInputs<P>>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+    fn new_variable<T: Borrow<PlasmaFoldExternalInputs<P, F>>>(
+        cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
     ) -> Result<Self, SynthesisError> {
-        todo!();
+        let ns = cs.into();
+        let cs = ns.cs();
+        f().and_then(|val| {
+            let external_inputs: &PlasmaFoldExternalInputs<P, F> = val.borrow();
+            let deposit_root_var =
+                PG::InnerDigest::new_witness(ark_relations::ns!(cs, "deposit_root"), || {
+                    Ok(external_inputs.deposit.deposit_root.clone())
+                })?;
+            let deposit_path_var =
+                PathVar::<P, F, PG>::new_witness(ark_relations::ns!(cs, "deposit_path"), || {
+                    Ok(external_inputs.deposit.deposit_path.clone())
+                })?;
+            let deposit_value = AllocVar::<[F; 2], F>::new_witness(
+                ark_relations::ns!(cs, "deposit_value"),
+                || Ok(external_inputs.deposit.deposit_value.clone()),
+            )?;
+            let deposit_var = DepositVar {
+                deposit_path: deposit_path_var,
+                deposit_root: deposit_root_var,
+                deposit_value,
+            };
+            Ok(PlasmaFoldExternalInputsVar { deposit_var })
+        })
     }
 }
 
@@ -117,8 +155,7 @@ where
 {
     type Params = P;
 
-    // [balance, n_deposits, n_transfers, n_receives, n_withdrawals]
-    type ExternalInputs = PlasmaFoldExternalInputs<P>;
+    type ExternalInputs = PlasmaFoldExternalInputs<P, F>;
 
     type ExternalInputsVar = PlasmaFoldExternalInputsVar<P, F, PG>;
 
@@ -136,36 +173,38 @@ where
     }
 
     fn generate_step_constraints(
-        // this method uses self, so that each FCircuit implementation (and different frontends)
-        // can hold a state if needed to store data to generate the constraints.
         &self,
         cs: ConstraintSystemRef<F>,
         i: usize,
         z_i: Vec<FpVar<F>>,
         external_inputs: Self::ExternalInputsVar, // inputs that are not part of the state
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        external_inputs.deposit(cs.clone(), self.mt_config.clone())?;
-        todo!()
+        // check deposit
+        let deposit_is_ok = external_inputs.deposit(cs.clone(), self.mt_config.clone())?;
+        deposit_is_ok.enforce_equal(&Boolean::constant(true))?;
+        Ok(z_i)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use ark_bn254::fr::Fr;
-    use ark_crypto_primitives::crh::poseidon::constraints::CRHGadget;
-    use ark_crypto_primitives::crh::poseidon::constraints::TwoToOneCRHGadget;
-    use ark_crypto_primitives::crh::poseidon::TwoToOneCRH;
-    use ark_crypto_primitives::crh::poseidon::CRH;
-    use ark_crypto_primitives::merkle_tree::constraints::ConfigGadget;
-    use ark_crypto_primitives::merkle_tree::{Config, IdentityDigestConverter};
-    use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-    use ark_r1cs_std::fields::fp::FpVar;
+    use ark_crypto_primitives::{
+        crh::poseidon::{
+            constraints::{CRHGadget, TwoToOneCRHGadget},
+            TwoToOneCRH, CRH,
+        },
+        merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter, MerkleTree},
+        sponge::poseidon::PoseidonConfig,
+    };
+    use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
+    use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::{frontend::FCircuit, transcript::poseidon::poseidon_canonical_config};
     use std::borrow::Borrow;
 
-    use super::PlasmaFoldCircuit;
-
-    type F = Fr;
+    use super::{
+        Deposit, PlasmaFoldCircuit, PlasmaFoldExternalInputs, PlasmaFoldExternalInputsVar,
+    };
 
     impl Borrow<PoseidonConfig<Fr>> for FieldMTConfig {
         fn borrow(&self) -> &PoseidonConfig<Fr> {
@@ -176,31 +215,60 @@ mod tests {
     #[derive(Debug, Clone)]
     struct FieldMTConfig;
     impl Config for FieldMTConfig {
-        type Leaf = [F];
-        type LeafDigest = F;
-        type LeafInnerDigestConverter = IdentityDigestConverter<F>;
-        type InnerDigest = F;
-        type LeafHash = CRH<F>;
-        type TwoToOneHash = TwoToOneCRH<F>;
+        type Leaf = [Fr];
+        type LeafDigest = Fr;
+        type LeafInnerDigestConverter = IdentityDigestConverter<Fr>;
+        type InnerDigest = Fr;
+        type LeafHash = CRH<Fr>;
+        type TwoToOneHash = TwoToOneCRH<Fr>;
     }
 
     #[derive(Debug, Clone)]
     struct FieldMTConfigVar;
-    impl ConfigGadget<FieldMTConfig, F> for FieldMTConfigVar {
-        type Leaf = [FpVar<F>];
-        type LeafDigest = FpVar<F>;
-        type LeafInnerConverter = IdentityDigestConverter<FpVar<F>>;
-        type InnerDigest = FpVar<F>;
-        type LeafHash = CRHGadget<F>;
-        type TwoToOneHash = TwoToOneCRHGadget<F>;
+    impl ConfigGadget<FieldMTConfig, Fr> for FieldMTConfigVar {
+        type Leaf = [FpVar<Fr>];
+        type LeafDigest = FpVar<Fr>;
+        type LeafInnerConverter = IdentityDigestConverter<FpVar<Fr>>;
+        type InnerDigest = FpVar<Fr>;
+        type LeafHash = CRHGadget<Fr>;
+        type TwoToOneHash = TwoToOneCRHGadget<Fr>;
     }
 
-    // use ark_crypto_primitives::
     pub fn test_deposit() {
-        let leaf_crh_params = poseidon_canonical_config::<F>();
+        let leaf_crh_params = poseidon_canonical_config::<Fr>();
         let two_to_one_params = leaf_crh_params.clone();
-        // let mut tree = MerkleTree::new(&leaf_crh_params, &two_to_one_params, leaves).unwrap();
+        let leaves = [
+            [Fr::from(123), Fr::from(456)],
+            [Fr::from(789), Fr::from(101112)],
+        ];
+        let deposit_tree =
+            MerkleTree::<FieldMTConfig>::new(&leaf_crh_params, &two_to_one_params, leaves).unwrap();
+        let deposit_proof = deposit_tree.generate_proof(0).unwrap();
+
+        // initialize deposit
+        let deposit = Deposit::<FieldMTConfig, Fr> {
+            deposit_path: deposit_proof,
+            deposit_root: deposit_tree.root(),
+            deposit_value: leaves[0],
+        };
+        let external_inputs = PlasmaFoldExternalInputs { deposit };
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+
+        let i = 0;
+        let z_i =
+            Vec::<FpVar<Fr>>::new_witness(cs.clone(), || Ok(Vec::from([Fr::from(1)]))).unwrap();
+        let external_inputs_var =
+            PlasmaFoldExternalInputsVar::<FieldMTConfig, Fr, FieldMTConfigVar>::new_witness(
+                cs.clone(),
+                || Ok(external_inputs),
+            )
+            .unwrap();
         let plasma_fold_circuit =
-            PlasmaFoldCircuit::<FieldMTConfig, F, FieldMTConfigVar>::new(FieldMTConfig);
+            PlasmaFoldCircuit::<FieldMTConfig, Fr, FieldMTConfigVar>::new(FieldMTConfig).unwrap();
+
+        plasma_fold_circuit
+            .generate_step_constraints(cs, i, z_i, external_inputs_var)
+            .unwrap();
     }
 }

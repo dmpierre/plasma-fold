@@ -1,8 +1,6 @@
-mod circuits;
+pub mod circuits;
 mod utils;
 
-use ark_ff::PrimeField;
-use ark_r1cs_std::alloc::AllocVar;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
