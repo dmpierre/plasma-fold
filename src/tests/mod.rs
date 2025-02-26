@@ -8,14 +8,17 @@ pub mod tests {
         merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter, MerkleTree},
         sponge::poseidon::PoseidonConfig,
     };
+    use ark_ff::Zero;
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
     use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::{frontend::FCircuit, transcript::poseidon::poseidon_canonical_config};
     use std::borrow::Borrow;
 
     use crate::circuits::{
-        Deposit, PlasmaFoldCircuit, PlasmaFoldExternalInputs, PlasmaFoldExternalInputsVar,
+        deposit::Deposit, PlasmaFoldExternalInputs, PlasmaFoldExternalInputsVar,
     };
+
+    use crate::circuits::PlasmaFoldCircuit;
 
     impl Borrow<PoseidonConfig<Fr>> for FieldMTConfig {
         fn borrow(&self) -> &PoseidonConfig<Fr> {
@@ -64,7 +67,13 @@ pub mod tests {
             deposit_root: deposit_tree.root(),
             deposit_value: leaves[0],
         };
-        let external_inputs = PlasmaFoldExternalInputs { deposit };
+        let balance = Fr::zero();
+        let deposit_flag = true;
+        let external_inputs = PlasmaFoldExternalInputs {
+            deposit,
+            balance,
+            deposit_flag,
+        };
 
         let cs = ConstraintSystem::<Fr>::new_ref();
 

@@ -4,7 +4,7 @@ use ark_crypto_primitives::{
     crh::{CRHScheme, CRHSchemeGadget, TwoToOneCRHScheme, TwoToOneCRHSchemeGadget},
     merkle_tree::{
         constraints::{ConfigGadget, PathVar},
-        Config, Path,
+        Config,
     },
     sponge::Absorb,
 };
@@ -12,38 +12,20 @@ use ark_crypto_primitives::{
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use deposit::{Deposit, DepositVar};
 use folding_schemes::frontend::FCircuit;
 
-#[derive(Debug, Clone)]
-pub struct Deposit<P: Config, F: PrimeField> {
-    pub deposit_path: Path<P>,
-    pub deposit_root: P::InnerDigest,
-    pub deposit_value: [F; 2],
-}
-
-#[derive(Debug, Clone)]
-pub struct DepositVar<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> {
-    pub deposit_path: PathVar<P, F, PG>,
-    pub deposit_root: PG::InnerDigest,
-    pub deposit_value: [FpVar<F>; 2],
-}
-
-impl<P: Config, F: PrimeField> Default for Deposit<P, F> {
-    fn default() -> Self {
-        let default_deposit_path = Path::default();
-        let default_deposit_root = P::InnerDigest::default();
-        let default_deposit_value = [F::ZERO, F::ZERO];
-        return Deposit {
-            deposit_path: default_deposit_path,
-            deposit_root: default_deposit_root,
-            deposit_value: default_deposit_value,
-        };
-    }
-}
-
+pub mod deposit;
+/// PlasmaFold private inputs consists in
+/// `balance`, `transfer_flag` (can not be activated at the same time as the deposit flag, since a
+/// user can not make a deposit and a transfer in the same block), `transfer_proof`, `update_flag`, `update_proof`,
+/// `withdraw_flag`, `withdraw_proof`
 #[derive(Debug, Clone)]
 pub struct PlasmaFoldExternalInputs<P: Config, F: PrimeField> {
-    pub deposit: Deposit<P, F>,
+    pub balance: F,         // balance of the user on the plasma fold chain
+    pub deposit_flag: bool, // indicating whether the user is making a deposit
+    pub deposit: Deposit<P, F>, // deposit witness (merkle proof of inclusion within the deposit
+                            // block)
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +85,8 @@ impl<P: Config, F: PrimeField> Default for PlasmaFoldExternalInputs<P, F> {
     fn default() -> Self {
         PlasmaFoldExternalInputs {
             deposit: Deposit::default(),
+            balance: F::default(),
+            deposit_flag: bool::default(), // false
         }
     }
 }
@@ -166,6 +150,8 @@ where
         })
     }
 
+    /// the IVC state consists in `[cur_block, nonce]` and indicate whether the account is up to
+    /// date with the latest block and the rollup contract stored nonce.
     fn state_len(&self) -> usize {
         1
     }
