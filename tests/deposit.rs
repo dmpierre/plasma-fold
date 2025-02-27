@@ -2,14 +2,26 @@
 
 extern crate wasm_bindgen_test;
 use wasm_bindgen_test::*;
-
+use web_sys::console;
 wasm_bindgen_test_configure!(run_in_browser);
 
-use plasma_fold::tests::tests::test_deposit;
-use web_sys::console;
+use plasma_fold::tests::tests::{
+    test_deposit_false_deposit_flag_false, test_deposit_true_deposit_flag_false,
+    test_deposit_true_deposit_flag_true,
+};
 
 #[wasm_bindgen_test]
-pub fn test_deposit_wasm() {
-    let is_satisfied = test_deposit().to_string();
-    console::log_2(&"Deposit: ".into(), &is_satisfied.into());
+pub fn test_deposit() {
+    console::log_2(
+        &"test_deposit_true_deposit_flag_true: ".into(),
+        &test_deposit_true_deposit_flag_true().to_string().into(),
+    );
+    console::log_2(
+        &" test_deposit_true_deposit_flag_false passed: ".into(),
+        &test_deposit_true_deposit_flag_false().to_string().into(),
+    );
+    console::log_2(
+        &"test_deposit_false_deposit_flag_false passed: ".into(),
+        &test_deposit_false_deposit_flag_false().to_string().into(),
+    );
 }

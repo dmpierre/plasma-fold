@@ -22,14 +22,14 @@ pub mod deposit;
 /// `withdraw_flag`, `withdraw_proof`
 #[derive(Debug, Clone)]
 pub struct PlasmaFoldExternalInputs<P: Config, F: PrimeField> {
-    pub balance: F,         // balance of the user on the plasma fold chain
-    pub deposit_flag: bool, // indicating whether the user is making a deposit
+    pub balance: F, // balance of the user on the plasma fold chain
     pub deposit: Deposit<P, F>, // deposit witness (merkle proof of inclusion within the deposit
-                            // block)
+                    // block)
 }
 
 #[derive(Debug, Clone)]
 pub struct PlasmaFoldExternalInputsVar<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>> {
+    pub balance: FpVar<F>,
     pub deposit_var: DepositVar<P, F, PG>,
 }
 
@@ -86,7 +86,6 @@ impl<P: Config, F: PrimeField> Default for PlasmaFoldExternalInputs<P, F> {
         PlasmaFoldExternalInputs {
             deposit: Deposit::default(),
             balance: F::default(),
-            deposit_flag: bool::default(), // false
         }
     }
 }
@@ -103,11 +102,14 @@ impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
         let cs = ns.cs();
         f().and_then(|val| {
             let external_inputs: &PlasmaFoldExternalInputs<P, F> = val.borrow();
-            let deposit_root_var =
+            let balance = FpVar::<F>::new_witness(ark_relations::ns!(cs, "deposit_root"), || {
+                Ok(external_inputs.balance)
+            })?;
+            let deposit_root =
                 PG::InnerDigest::new_witness(ark_relations::ns!(cs, "deposit_root"), || {
                     Ok(external_inputs.deposit.deposit_root.clone())
                 })?;
-            let deposit_path_var =
+            let deposit_path =
                 PathVar::<P, F, PG>::new_witness(ark_relations::ns!(cs, "deposit_path"), || {
                     Ok(external_inputs.deposit.deposit_path.clone())
                 })?;
@@ -115,12 +117,20 @@ impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
                 ark_relations::ns!(cs, "deposit_value"),
                 || Ok(external_inputs.deposit.deposit_value.clone()),
             )?;
+            let deposit_flag =
+                Boolean::new_witness(ark_relations::ns!(cs, "deposit_flag"), || {
+                    Ok(external_inputs.deposit.deposit_flag)
+                })?;
             let deposit_var = DepositVar {
-                deposit_path: deposit_path_var,
-                deposit_root: deposit_root_var,
+                deposit_path,
+                deposit_root,
                 deposit_value,
+                deposit_flag,
             };
-            Ok(PlasmaFoldExternalInputsVar { deposit_var })
+            Ok(PlasmaFoldExternalInputsVar {
+                deposit_var,
+                balance,
+            })
         })
     }
 }
@@ -153,6 +163,7 @@ where
     /// the IVC state consists in `[cur_block, nonce]` and indicate whether the account is up to
     /// date with the latest block and the rollup contract stored nonce.
     fn state_len(&self) -> usize {
+        // TODO: update state length
         1
     }
 
@@ -163,9 +174,16 @@ where
         z_i: Vec<FpVar<F>>,
         external_inputs: Self::ExternalInputsVar, // inputs that are not part of the state
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        // check deposit
+        // I. DEPOSIT
+        // 1. Check that the deposit logic is correct
+        // (deposit is ok and deposit flag is true) or (the deposit is not ok and the deposit flag is false)
+        // This means that we want to ensure that deposit_is_ok == deposit_flag
+        let deposit_flag = &external_inputs.deposit_var.deposit_flag;
         let deposit_is_ok = external_inputs.deposit(cs.clone(), self.mt_config.clone())?;
-        deposit_is_ok.enforce_equal(&Boolean::constant(true))?;
+        deposit_is_ok.enforce_equal(deposit_flag)?;
+
+        //  2. update balance accordingly
+        // deposit_is_ok_and_deposit_flag_is_true
         Ok(z_i)
     }
 }
