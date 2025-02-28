@@ -198,6 +198,7 @@ where
         // COMPUTE NEXT BLOCK HASH
         let new_block_hash = external_inputs.compute_block_hash(
             cs.clone(),
+            // for now, we are using the same CRH as the one used for our merkle trees
             self.mt_config.clone(),
             z_i[0].clone(),
         )?;
