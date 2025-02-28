@@ -3,7 +3,7 @@ use ark_crypto_primitives::merkle_tree::{
     Config, Path,
 };
 use ark_ff::PrimeField;
-use ark_r1cs_std::{fields::fp::FpVar, prelude::Boolean};
+use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::Boolean};
 
 #[derive(Debug, Clone)]
 pub struct Deposit<P: Config, F: PrimeField> {
@@ -33,5 +33,43 @@ impl<P: Config, F: PrimeField> Default for Deposit<P, F> {
             deposit_value: default_deposit_value,
             deposit_flag: default_deposit_flag,
         };
+    }
+}
+
+impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> AllocVar<Deposit<P, F>, F>
+    for DepositVar<P, F, PG>
+{
+    fn new_variable<T: std::borrow::Borrow<Deposit<P, F>>>(
+        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+        f: impl FnOnce() -> Result<T, ark_relations::r1cs::SynthesisError>,
+        mode: ark_r1cs_std::prelude::AllocationMode,
+    ) -> Result<Self, ark_relations::r1cs::SynthesisError> {
+        let ns = cs.into();
+        let cs = ns.cs();
+        f().and_then(|val| {
+            let deposit: &Deposit<P, F> = val.borrow();
+            let deposit_root =
+                PG::InnerDigest::new_witness(ark_relations::ns!(cs, "deposit_root"), || {
+                    Ok(&deposit.deposit_root)
+                })?;
+            let deposit_path =
+                PathVar::<P, F, PG>::new_witness(ark_relations::ns!(cs, "deposit_path"), || {
+                    Ok(&deposit.deposit_path)
+                })?;
+            let deposit_value = AllocVar::<[F; 2], F>::new_witness(
+                ark_relations::ns!(cs, "deposit_value"),
+                || Ok(&deposit.deposit_value),
+            )?;
+            let deposit_flag =
+                Boolean::new_witness(ark_relations::ns!(cs, "deposit_flag"), || {
+                    Ok(deposit.deposit_flag)
+                })?;
+            Ok(DepositVar {
+                deposit_path,
+                deposit_root,
+                deposit_value,
+                deposit_flag,
+            })
+        })
     }
 }

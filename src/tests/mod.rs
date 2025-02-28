@@ -1,12 +1,9 @@
 pub mod tests {
     use ark_bn254::fr::Fr;
     use ark_crypto_primitives::{
-        crh::{
-            poseidon::{
-                constraints::{CRHGadget, TwoToOneCRHGadget},
-                TwoToOneCRH, CRH,
-            },
-            CRHScheme, TwoToOneCRHScheme,
+        crh::poseidon::{
+            constraints::{CRHGadget, TwoToOneCRHGadget},
+            TwoToOneCRH, CRH,
         },
         merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter, MerkleTree},
         sponge::poseidon::PoseidonConfig,
@@ -18,7 +15,7 @@ pub mod tests {
     use std::borrow::Borrow;
 
     use crate::circuits::{
-        deposit::Deposit, PlasmaFoldExternalInputs, PlasmaFoldExternalInputsVar,
+        block::Block, deposit::Deposit, PlasmaFoldExternalInputs, PlasmaFoldExternalInputsVar,
     };
 
     use crate::circuits::PlasmaFoldCircuit;
@@ -110,7 +107,12 @@ pub mod tests {
         // initialize inputs
         let balance = Fr::zero();
         let (deposit_tree, deposit) = get_deposit(&poseidon_config, true, true);
-        let external_inputs = PlasmaFoldExternalInputs { deposit, balance };
+        let block = Block::default();
+        let external_inputs = PlasmaFoldExternalInputs {
+            deposit,
+            balance,
+            block,
+        };
         let (z_i, external_inputs_var) =
             initialize_vars(cs.clone(), &[Fr::from(1)], &external_inputs);
         let i = 0;
@@ -138,7 +140,12 @@ pub mod tests {
         // initialize inputs
         let balance = Fr::zero();
         let (deposit_tree, deposit) = get_deposit(&poseidon_config, false, true);
-        let external_inputs = PlasmaFoldExternalInputs { deposit, balance };
+        let block = Block::default();
+        let external_inputs = PlasmaFoldExternalInputs {
+            deposit,
+            balance,
+            block,
+        };
         let (z_i, external_inputs_var) =
             initialize_vars(cs.clone(), &[Fr::from(1)], &external_inputs);
         let i = 0;
@@ -166,7 +173,12 @@ pub mod tests {
         // initialize inputs
         let balance = Fr::zero();
         let (deposit_tree, deposit) = get_deposit(&poseidon_config, false, false);
-        let external_inputs = PlasmaFoldExternalInputs { deposit, balance };
+        let block = Block::default();
+        let external_inputs = PlasmaFoldExternalInputs {
+            deposit,
+            balance,
+            block,
+        };
         let (z_i, external_inputs_var) =
             initialize_vars(cs.clone(), &[Fr::from(1)], &external_inputs);
         let i = 0;

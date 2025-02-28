@@ -12,10 +12,13 @@ use ark_crypto_primitives::{
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use block::{Block, BlockVar};
 use deposit::{Deposit, DepositVar};
 use folding_schemes::frontend::FCircuit;
 
+pub mod block;
 pub mod deposit;
+
 /// PlasmaFold private inputs consists in
 /// `balance`, `transfer_flag` (can not be activated at the same time as the deposit flag, since a
 /// user can not make a deposit and a transfer in the same block), `transfer_proof`, `update_flag`, `update_proof`,
@@ -23,14 +26,17 @@ pub mod deposit;
 #[derive(Debug, Clone)]
 pub struct PlasmaFoldExternalInputs<P: Config, F: PrimeField> {
     pub balance: F, // balance of the user on the plasma fold chain
-    pub deposit: Deposit<P, F>, // deposit witness (merkle proof of inclusion within the deposit
-                    // block)
+    // deposit witness (merkle proof of inclusion within the deposit block)
+    pub deposit: Deposit<P, F>,
+    // block, containing different trees
+    pub block: Block<P>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PlasmaFoldExternalInputsVar<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>> {
     pub balance: FpVar<F>,
     pub deposit_var: DepositVar<P, F, PG>,
+    pub block_var: BlockVar<P, F, PG>,
 }
 
 #[derive(Clone, Debug)]
@@ -85,6 +91,7 @@ impl<P: Config, F: PrimeField> Default for PlasmaFoldExternalInputs<P, F> {
     fn default() -> Self {
         PlasmaFoldExternalInputs {
             deposit: Deposit::default(),
+            block: Block::default(),
             balance: F::default(),
         }
     }
@@ -93,6 +100,8 @@ impl<P: Config, F: PrimeField> Default for PlasmaFoldExternalInputs<P, F> {
 impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
     AllocVar<PlasmaFoldExternalInputs<P, F>, F> for PlasmaFoldExternalInputsVar<P, F, PG>
 {
+    // TODO: impl AllocVar for DepositVar
+    // TODO: the deposit root is duplicated, remove this duplication
     fn new_variable<T: Borrow<PlasmaFoldExternalInputs<P, F>>>(
         cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -102,32 +111,17 @@ impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
         let cs = ns.cs();
         f().and_then(|val| {
             let external_inputs: &PlasmaFoldExternalInputs<P, F> = val.borrow();
-            let balance = FpVar::<F>::new_witness(ark_relations::ns!(cs, "deposit_root"), || {
+            let balance = FpVar::<F>::new_witness(ark_relations::ns!(cs, "balance"), || {
                 Ok(external_inputs.balance)
             })?;
-            let deposit_root =
-                PG::InnerDigest::new_witness(ark_relations::ns!(cs, "deposit_root"), || {
-                    Ok(external_inputs.deposit.deposit_root.clone())
-                })?;
-            let deposit_path =
-                PathVar::<P, F, PG>::new_witness(ark_relations::ns!(cs, "deposit_path"), || {
-                    Ok(external_inputs.deposit.deposit_path.clone())
-                })?;
-            let deposit_value = AllocVar::<[F; 2], F>::new_witness(
-                ark_relations::ns!(cs, "deposit_value"),
-                || Ok(external_inputs.deposit.deposit_value.clone()),
-            )?;
-            let deposit_flag =
-                Boolean::new_witness(ark_relations::ns!(cs, "deposit_flag"), || {
-                    Ok(external_inputs.deposit.deposit_flag)
-                })?;
-            let deposit_var = DepositVar {
-                deposit_path,
-                deposit_root,
-                deposit_value,
-                deposit_flag,
-            };
+            let deposit_var = DepositVar::new_witness(ark_relations::ns!(cs, "deposit"), || {
+                Ok(&external_inputs.deposit)
+            })?;
+            let block_var = BlockVar::new_witness(ark_relations::ns!(cs, "block"), || {
+                Ok(&external_inputs.block)
+            })?;
             Ok(PlasmaFoldExternalInputsVar {
+                block_var,
                 deposit_var,
                 balance,
             })
@@ -174,7 +168,9 @@ where
         z_i: Vec<FpVar<F>>,
         external_inputs: Self::ExternalInputsVar, // inputs that are not part of the state
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        // I. DEPOSIT
+        // COMPUTE CURRENT BLOCK HASH
+
+        // DEPOSIT
         // 1. Check that the deposit logic is correct
         // (deposit is ok and deposit flag is true) or (the deposit is not ok and the deposit flag is false)
         // This means that we want to ensure that deposit_is_ok == deposit_flag
@@ -183,7 +179,10 @@ where
         deposit_is_ok.enforce_equal(deposit_flag)?;
 
         //  2. update balance accordingly
-        // deposit_is_ok_and_deposit_flag_is_true
+        //  TODO: update balance accordingly using deposit flag. When false, balance doesn't get
+        //  updated, otherwise, when deposit is correct and flag is true, can update balance
+
+        // TRANSFER
         Ok(z_i)
     }
 }
