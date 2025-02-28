@@ -2,8 +2,6 @@ use ark_crypto_primitives::merkle_tree::{constraints::ConfigGadget, Config};
 use ark_ff::PrimeField;
 use ark_r1cs_std::alloc::AllocVar;
 
-use super::deposit;
-
 /// A block is composed of three things a transaction tree, a deposit tree and a withdrawal tree
 /// We store in the struct the root of each of those three trees
 #[derive(Debug, Clone)]
@@ -27,9 +25,9 @@ impl<P: Config> Default for Block<P> {
 /// We store in the struct the root of each of those three trees
 #[derive(Debug, Clone)]
 pub struct BlockVar<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> {
-    transaction_tree_root: PG::InnerDigest,
-    deposit_tree_root: PG::InnerDigest,
-    withdrawal_tree_root: PG::InnerDigest,
+    pub transaction_tree_root: PG::InnerDigest,
+    pub deposit_tree_root: PG::InnerDigest,
+    pub withdrawal_tree_root: PG::InnerDigest,
 }
 
 impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> AllocVar<Block<P>, F>

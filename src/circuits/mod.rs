@@ -2,10 +2,7 @@ use std::{borrow::Borrow, marker::PhantomData};
 
 use ark_crypto_primitives::{
     crh::{CRHScheme, CRHSchemeGadget, TwoToOneCRHScheme, TwoToOneCRHSchemeGadget},
-    merkle_tree::{
-        constraints::{ConfigGadget, PathVar},
-        Config,
-    },
+    merkle_tree::{constraints::ConfigGadget, Config},
     sponge::Absorb,
 };
 
@@ -47,15 +44,44 @@ pub struct PlasmaFoldCircuit<P: Config, F: PrimeField + Absorb, PG: ConfigGadget
     _f2: PhantomData<PG>,
 }
 
-/// The `PlasmaFoldCircuit` implements methods to check various actions the user can take on the
+/// The `PlasmaFoldExternalInputsVar` struct implements methods to check various actions the user can take on the
 /// plasma chain: deposit, transfer, receive, withdraw
-impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F, Leaf = [FpVar<F>]>>
-    PlasmaFoldExternalInputsVar<P, F, PG>
+/// For now, it uses the same hash for both computing merkle trees and block hashes
+/// TODO: be generic over the CRH used as well
+impl<
+        P: Config,
+        F: PrimeField + Absorb,
+        PG: ConfigGadget<P, F, Leaf = [FpVar<F>], InnerDigest = FpVar<F>>,
+    > PlasmaFoldExternalInputsVar<P, F, PG>
 where
     P: Borrow<<<P as Config>::LeafHash as CRHScheme>::Parameters>
         + Borrow<<<P as Config>::TwoToOneHash as TwoToOneCRHScheme>::Parameters>
         + Clone,
 {
+    /// Compute block hash
+    pub fn compute_block_hash(
+        &self,
+        cs: ConstraintSystemRef<F>,
+        config: P,
+        prev_block_hash: FpVar<F>,
+    ) -> Result<<PG::LeafHash as CRHSchemeGadget<P::LeafHash, F>>::OutputVar, SynthesisError> {
+        let crh_parameters_var = <<PG as ConfigGadget<P, F>>::LeafHash as CRHSchemeGadget<
+            <P as Config>::LeafHash,
+            F,
+        >>::ParametersVar::new_constant(
+            ark_relations::ns!(cs, "crh_params"), config.clone()
+        )?;
+        <PG::LeafHash as CRHSchemeGadget<P::LeafHash, F>>::evaluate(
+            &crh_parameters_var,
+            &[
+                prev_block_hash.clone(),
+                self.block_var.deposit_tree_root.clone(),
+                self.block_var.transaction_tree_root.clone(),
+                self.block_var.withdrawal_tree_root.clone(),
+            ],
+        )
+    }
+
     /// Checking the deposit consists in checking a merkle inclusion proof within a deposit block
     pub fn deposit(
         &self,
@@ -130,9 +156,11 @@ impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
 }
 
 impl<
-        P: Config + Clone + std::fmt::Debug,
+        P: Config + Clone + std::fmt::Debug, // for computing trees
         F: PrimeField + Absorb,
-        PG: ConfigGadget<P, F, Leaf = [FpVar<F>]> + Clone + std::fmt::Debug,
+        PG: ConfigGadget<P, F, Leaf = [FpVar<F>], InnerDigest = FpVar<F>, LeafDigest = FpVar<F>>
+            + Clone
+            + std::fmt::Debug,
     > FCircuit<F> for PlasmaFoldCircuit<P, F, PG>
 where
     P: Borrow<<<P as Config>::LeafHash as CRHScheme>::Parameters>
@@ -154,11 +182,10 @@ where
         })
     }
 
-    /// the IVC state consists in `[cur_block, nonce]` and indicate whether the account is up to
+    /// the IVC state consists in `[prev_block, nonce]` and indicate whether the account is up to
     /// date with the latest block and the rollup contract stored nonce.
     fn state_len(&self) -> usize {
-        // TODO: update state length
-        1
+        2
     }
 
     fn generate_step_constraints(
@@ -168,7 +195,12 @@ where
         z_i: Vec<FpVar<F>>,
         external_inputs: Self::ExternalInputsVar, // inputs that are not part of the state
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        // COMPUTE CURRENT BLOCK HASH
+        // COMPUTE NEXT BLOCK HASH
+        let new_block_hash = external_inputs.compute_block_hash(
+            cs.clone(),
+            self.mt_config.clone(),
+            z_i[0].clone(),
+        )?;
 
         // DEPOSIT
         // 1. Check that the deposit logic is correct
@@ -183,6 +215,6 @@ where
         //  updated, otherwise, when deposit is correct and flag is true, can update balance
 
         // TRANSFER
-        Ok(z_i)
+        Ok(Vec::from([new_block_hash, z_i[1].clone()]))
     }
 }
