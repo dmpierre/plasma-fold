@@ -13,18 +13,14 @@ use ark_relations::r1cs::ConstraintSystemRef;
 /// Inits
 /// For testing purposes
 pub fn init_external_inputs<P: Config<Leaf = [F]>, F: PrimeField + Absorb>(
-    salt: F,         // required to compute the public state
-    prev_balance: F, // required to compute the public state
-    balance: Option<F>,
+    salt: F, // required to compute the public state
+    balance: F,
     block: Option<Block<P>>,
     deposit: Option<Deposit<P, F>>,
 ) -> PlasmaFoldExternalInputs<P, F> {
     let mut external_inputs = PlasmaFoldExternalInputs::default();
     external_inputs.salt = salt;
-    external_inputs.prev_balance = prev_balance;
-    if let Some(bal) = balance {
-        external_inputs.balance = bal;
-    }
+    external_inputs.balance = balance;
     if let Some(b) = block {
         external_inputs.block = b;
     }

@@ -6,8 +6,8 @@ use web_sys::console;
 wasm_bindgen_test_configure!(run_in_browser);
 
 use plasma_fold::circuits::deposit::tests::{
-    test_deposit_false_deposit_flag_false, test_deposit_true_deposit_flag_false,
-    test_deposit_true_deposit_flag_true,
+    test_balance_is_not_updated_when_flag_is_false, test_deposit_false_deposit_flag_false,
+    test_deposit_true_deposit_flag_false, test_deposit_true_deposit_flag_true,
 };
 
 #[wasm_bindgen_test]
@@ -23,5 +23,12 @@ pub fn test_deposit() {
     console::log_2(
         &"test_deposit_false_deposit_flag_false passed: ".into(),
         &test_deposit_false_deposit_flag_false().to_string().into(),
+    );
+
+    console::log_2(
+        &"test_balance_is_not_updated_when_flag_is_false passed: ".into(),
+        &test_balance_is_not_updated_when_flag_is_false()
+            .to_string()
+            .into(),
     );
 }

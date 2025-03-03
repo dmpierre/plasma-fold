@@ -28,9 +28,8 @@ pub mod deposit;
 /// `withdraw_flag`, `withdraw_proof`
 #[derive(Debug, Clone)]
 pub struct PlasmaFoldExternalInputs<P: Config, F: PrimeField> {
-    pub salt: F,         // salt ensuring privacy of the user's balance
-    pub prev_balance: F, // previous user's balance
-    pub balance: F,      // balance of the user on the plasma fold chain
+    pub salt: F,    // salt ensuring privacy of the user's balance
+    pub balance: F, // user's balance
     // deposit witness (merkle proof of inclusion within the deposit block)
     pub deposit: Deposit<P, F>,
     // block, containing different trees
@@ -44,16 +43,15 @@ impl<P: Config<Leaf = [F], LeafDigest = F>, F: PrimeField> PlasmaFoldExternalInp
     ) -> Result<F, Error> {
         return <<P as Config>::LeafHash as CRHScheme>::evaluate(
             &params,
-            [self.salt, self.prev_balance],
+            [self.salt, self.balance],
         );
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct PlasmaFoldExternalInputsVar<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>> {
-    pub prev_balance: FpVar<F>,
-    pub salt: FpVar<F>,
     pub balance: FpVar<F>,
+    pub salt: FpVar<F>,
     pub deposit_var: DepositVar<P, F, PG>,
     pub block_var: BlockVar<P, F, PG>,
 }
@@ -146,10 +144,23 @@ where
             ark_relations::ns!(cs, "crh_params"), config.clone()
         )?;
 
-        PG::LeafHash::evaluate(
-            &crh_params_var,
-            &[self.salt.clone(), self.prev_balance.clone()],
-        )
+        PG::LeafHash::evaluate(&crh_params_var, &[self.salt.clone(), self.balance.clone()])
+    }
+
+    pub fn update_public_state(
+        &self,
+        cs: ConstraintSystemRef<F>,
+        config: P,
+        new_balance: FpVar<F>,
+    ) -> Result<FpVar<F>, SynthesisError> {
+        let crh_params_var = <<PG as ConfigGadget<P, F>>::LeafHash as CRHSchemeGadget<
+            <P as Config>::LeafHash,
+            F,
+        >>::ParametersVar::new_constant(
+            ark_relations::ns!(cs, "crh_params"), config.clone()
+        )?;
+
+        PG::LeafHash::evaluate(&crh_params_var, &[self.salt.clone(), new_balance.clone()])
     }
 }
 
@@ -157,10 +168,9 @@ impl<P: Config, F: PrimeField> Default for PlasmaFoldExternalInputs<P, F> {
     fn default() -> Self {
         PlasmaFoldExternalInputs {
             salt: F::default(),
-            prev_balance: F::default(),
+            balance: F::default(),
             deposit: Deposit::default(),
             block: Block::default(),
-            balance: F::default(),
         }
     }
 }
@@ -179,15 +189,11 @@ impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
         let cs = ns.cs();
         f().and_then(|val| {
             let external_inputs: &PlasmaFoldExternalInputs<P, F> = val.borrow();
-            let prev_balance =
-                FpVar::<F>::new_witness(ark_relations::ns!(cs, "prev_balance"), || {
-                    Ok(external_inputs.prev_balance)
-                })?;
+            let balance = FpVar::<F>::new_witness(ark_relations::ns!(cs, "prev_balance"), || {
+                Ok(external_inputs.balance)
+            })?;
             let salt = FpVar::<F>::new_witness(ark_relations::ns!(cs, "salt"), || {
                 Ok(external_inputs.salt)
-            })?;
-            let balance = FpVar::<F>::new_witness(ark_relations::ns!(cs, "balance"), || {
-                Ok(external_inputs.balance)
             })?;
             let deposit_var = DepositVar::new_witness(ark_relations::ns!(cs, "deposit"), || {
                 Ok(&external_inputs.deposit)
@@ -197,10 +203,9 @@ impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
             })?;
             Ok(PlasmaFoldExternalInputsVar {
                 salt,
-                prev_balance,
+                balance,
                 block_var,
                 deposit_var,
-                balance,
             })
         })
     }
@@ -249,16 +254,12 @@ where
         // VALIDATE INPUTS
         // - Check that h(prev_balance, salt) == z_i[2]
         // - Check that balance > 0
-        // - Check that prev_balance > 0
         let computed_public_state =
             external_inputs.compute_public_state(cs.clone(), self.mt_config.clone())?;
         computed_public_state.enforce_equal(&z_i[2])?;
 
         external_inputs
             .balance
-            .enforce_smaller_or_equal_than_mod_minus_one_div_two()?;
-        external_inputs
-            .prev_balance
             .enforce_smaller_or_equal_than_mod_minus_one_div_two()?;
 
         // DEPOSIT
@@ -274,8 +275,7 @@ where
             .enforce_smaller_or_equal_than_mod_minus_one_div_two()?;
 
         //  Update balance
-        //  TODO: update balance accordingly using deposit flag. When false, balance doesn't get
-        //  updated, otherwise, when deposit is correct and flag is true, can update balance
+        //  When flag is false (0), the balance remains untouched
         let deposit_flag_as_fpvar = deposit_flag.to_bytes_le()?[0].to_fp()?;
         let new_balance = &external_inputs.balance
             + &deposit_flag_as_fpvar * &external_inputs.deposit_var.deposit_value[1];
@@ -306,7 +306,15 @@ where
             &z_i[0].clone(),
         )?;
 
-        Ok(Vec::from([new_block_hash, z_i[1].clone()]))
+        // COMPUTE NEW PUBLIC STATE
+        let next_public_state =
+            external_inputs.update_public_state(cs.clone(), self.mt_config.clone(), new_balance)?;
+
+        Ok(Vec::from([
+            new_block_hash,
+            z_i[1].clone(),
+            next_public_state,
+        ]))
     }
 }
 
@@ -364,9 +372,9 @@ pub mod tests {
     pub fn test_n_constraints() -> usize {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let poseidon_config = poseidon_canonical_config::<Fr>();
-        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let (salt, balance) = (Fr::ONE, Fr::ONE);
         let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
-        let external_inputs = init_external_inputs(salt, prev_balance, None, None, None);
+        let external_inputs = init_external_inputs(salt, balance, None, None);
         let z_i = [
             prev_block_hash,
             nonce,
@@ -395,13 +403,12 @@ pub mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let poseidon_config = poseidon_canonical_config::<Fr>();
 
-        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let mod_div_2: Fr = Fr::MODULUS_MINUS_ONE_DIV_TWO.into();
+        let (salt, balance) = (Fr::ONE, mod_div_2 + Fr::ONE);
         let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
 
         // we are going to set the balance to -1
-        let mod_div_2: Fr = Fr::MODULUS_MINUS_ONE_DIV_TWO.into();
-        let external_inputs =
-            init_external_inputs(salt, prev_balance, Some(mod_div_2 + Fr::ONE), None, None);
+        let external_inputs = init_external_inputs(salt, balance, None, None);
         let z_i = [
             prev_block_hash,
             nonce,
@@ -431,13 +438,10 @@ pub mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let poseidon_config = poseidon_canonical_config::<Fr>();
 
-        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let (salt, balance) = (Fr::ONE, Fr::ONE);
         let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
 
-        // we are going to set the balance to -1
-        let mod_div_2: Fr = Fr::MODULUS_MINUS_ONE_DIV_TWO.into();
-        let external_inputs =
-            init_external_inputs(salt, prev_balance, Some(mod_div_2 + Fr::ONE), None, None);
+        let external_inputs = init_external_inputs(salt, balance, None, None);
         let z_i = [
             prev_block_hash,
             nonce,

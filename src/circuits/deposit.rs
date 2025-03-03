@@ -85,7 +85,7 @@ pub mod tests {
         sponge::poseidon::PoseidonConfig,
     };
     use ark_ff::Field;
-    use ark_r1cs_std::fields::fp::FpVar;
+    use ark_r1cs_std::{fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::{frontend::FCircuit, transcript::poseidon::poseidon_canonical_config};
     use std::borrow::Borrow;
@@ -130,9 +130,9 @@ pub mod tests {
 
         // initialize inputs, with correct deposit and deposit flag at true
         let (deposit_tree, deposit) = get_deposit(&poseidon_config, &poseidon_config, true, true);
-        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let (salt, balance) = (Fr::ONE, Fr::ONE);
         let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
-        let external_inputs = init_external_inputs(salt, prev_balance, None, None, Some(deposit));
+        let external_inputs = init_external_inputs(salt, balance, None, Some(deposit));
         let z_i = [
             prev_block_hash,
             nonce,
@@ -164,9 +164,9 @@ pub mod tests {
 
         // initialize inputs, with correct deposit and deposit flag at true
         let (deposit_tree, deposit) = get_deposit(&poseidon_config, &poseidon_config, false, true);
-        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let (salt, balance) = (Fr::ONE, Fr::ONE);
         let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
-        let external_inputs = init_external_inputs(salt, prev_balance, None, None, Some(deposit));
+        let external_inputs = init_external_inputs(salt, balance, None, Some(deposit));
         let z_i = [
             prev_block_hash,
             nonce,
@@ -198,9 +198,9 @@ pub mod tests {
 
         // initialize inputs, with correct deposit and deposit flag at true
         let (deposit_tree, deposit) = get_deposit(&poseidon_config, &poseidon_config, false, false);
-        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let (salt, balance) = (Fr::ONE, Fr::ONE);
         let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
-        let external_inputs = init_external_inputs(salt, prev_balance, None, None, Some(deposit));
+        let external_inputs = init_external_inputs(salt, balance, None, Some(deposit));
         let z_i = [
             prev_block_hash,
             nonce,
@@ -222,5 +222,38 @@ pub mod tests {
         let is_satisfied = cs.is_satisfied().unwrap();
         assert!(is_satisfied);
         is_satisfied
+    }
+
+    pub fn test_balance_is_not_updated_when_flag_is_false() -> bool {
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let poseidon_config = poseidon_canonical_config::<Fr>();
+
+        // initialize inputs, with correct deposit and deposit flag at true
+        let (deposit_tree, deposit) = get_deposit(&poseidon_config, &poseidon_config, false, false);
+        let (salt, balance) = (Fr::ONE, Fr::ONE);
+        let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
+        let external_inputs = init_external_inputs(salt, balance, None, Some(deposit));
+        let z_i = [
+            prev_block_hash,
+            nonce,
+            external_inputs
+                .compute_public_state(&poseidon_config)
+                .unwrap(),
+        ];
+        let (z_i_vars, external_inputs_vars) = init_vars(cs.clone(), &z_i, &external_inputs);
+
+        // initialize plasma fold circuit
+        let field_mt_config = FieldMTConfig {
+            poseidon_conf: poseidon_config,
+        };
+        let plasma_fold_circuit =
+            PlasmaFoldCircuit::<FieldMTConfig, Fr, FieldMTConfigVar>::new(field_mt_config).unwrap();
+        let new_z_i = plasma_fold_circuit
+            .generate_step_constraints(cs.clone(), 0, z_i_vars, external_inputs_vars)
+            .unwrap();
+        let is_satisfied = cs.is_satisfied().unwrap();
+        assert!(is_satisfied);
+        assert_eq!(new_z_i[2].value().unwrap(), z_i[2]);
+        new_z_i[2].value().unwrap() == z_i[2]
     }
 }
