@@ -9,7 +9,7 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::Boolean};
 pub struct Deposit<P: Config, F: PrimeField> {
     pub deposit_path: Path<P>, // path from leaf to root of the deposit tree
     pub deposit_root: P::InnerDigest, // root of the deposit tree
-    pub deposit_value: [F; 2], // value of the deposit that has been made
+    pub deposit_value: [F; 2], // (token_index, value)
     pub deposit_flag: bool,    // indicates whether a deposit occured
 }
 
@@ -17,7 +17,7 @@ pub struct Deposit<P: Config, F: PrimeField> {
 pub struct DepositVar<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> {
     pub deposit_path: PathVar<P, F, PG>,
     pub deposit_root: PG::InnerDigest,
-    pub deposit_value: [FpVar<F>; 2],
+    pub deposit_value: [FpVar<F>; 2], // (token_index, value)
     pub deposit_flag: Boolean<F>,
 }
 
@@ -84,13 +84,13 @@ pub mod tests {
         merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter},
         sponge::poseidon::PoseidonConfig,
     };
-    use ark_ff::{AdditiveGroup, Zero};
+    use ark_ff::{AdditiveGroup, Field, Zero};
     use ark_r1cs_std::fields::fp::FpVar;
     use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::{frontend::FCircuit, transcript::poseidon::poseidon_canonical_config};
     use std::borrow::Borrow;
 
-    use crate::tests::utils::{get_deposit, init};
+    use crate::tests::utils::{get_deposit, init_external_inputs, init_vars};
 
     use crate::circuits::PlasmaFoldCircuit;
 
@@ -130,14 +130,17 @@ pub mod tests {
 
         // initialize inputs, with correct deposit and deposit flag at true
         let (deposit_tree, deposit) = get_deposit(&poseidon_config, &poseidon_config, true, true);
-        let (external_inputs, z_i_vars, external_inputs_vars) = init(
-            cs.clone(),
-            &[Fr::from(1), Fr::from(1)],
-            Some(Fr::ZERO),
-            None,
-            Some(deposit),
-        );
-        let i = 0;
+        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
+        let external_inputs = init_external_inputs(salt, prev_balance, None, None, Some(deposit));
+        let z_i = [
+            prev_block_hash,
+            nonce,
+            external_inputs
+                .compute_public_state(&poseidon_config)
+                .unwrap(),
+        ];
+        let (z_i_vars, external_inputs_vars) = init_vars(cs.clone(), &z_i, &external_inputs);
 
         // initialize plasma fold circuit
         let field_mt_config = FieldMTConfig {
@@ -147,7 +150,7 @@ pub mod tests {
             PlasmaFoldCircuit::<FieldMTConfig, Fr, FieldMTConfigVar>::new(field_mt_config).unwrap();
 
         plasma_fold_circuit
-            .generate_step_constraints(cs.clone(), i, z_i_vars, external_inputs_vars)
+            .generate_step_constraints(cs.clone(), 0, z_i_vars, external_inputs_vars)
             .unwrap();
 
         let is_satisfied = cs.is_satisfied().unwrap();
@@ -159,16 +162,19 @@ pub mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let poseidon_config = poseidon_canonical_config::<Fr>();
 
-        // initialize inputs
+        // initialize inputs, with correct deposit and deposit flag at true
         let (deposit_tree, deposit) = get_deposit(&poseidon_config, &poseidon_config, false, true);
-        let (external_inputs, z_i_vars, external_inputs_vars) = init(
-            cs.clone(),
-            &[Fr::from(1), Fr::from(1)],
-            Some(Fr::ZERO),
-            None,
-            Some(deposit),
-        );
-        let i = 0;
+        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
+        let external_inputs = init_external_inputs(salt, prev_balance, None, None, Some(deposit));
+        let z_i = [
+            prev_block_hash,
+            nonce,
+            external_inputs
+                .compute_public_state(&poseidon_config)
+                .unwrap(),
+        ];
+        let (z_i_vars, external_inputs_vars) = init_vars(cs.clone(), &z_i, &external_inputs);
 
         // initialize plasma fold circuit
         let field_mt_config = FieldMTConfig {
@@ -176,30 +182,33 @@ pub mod tests {
         };
         let plasma_fold_circuit =
             PlasmaFoldCircuit::<FieldMTConfig, Fr, FieldMTConfigVar>::new(field_mt_config).unwrap();
+
         plasma_fold_circuit
-            .generate_step_constraints(cs.clone(), i, z_i_vars, external_inputs_vars)
+            .generate_step_constraints(cs.clone(), 0, z_i_vars, external_inputs_vars)
             .unwrap();
 
         let is_satisfied = cs.is_satisfied().unwrap();
         assert!(!is_satisfied);
-        is_satisfied
+        !is_satisfied
     }
 
     pub fn test_deposit_false_deposit_flag_false() -> bool {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let poseidon_config = poseidon_canonical_config::<Fr>();
 
-        // initialize inputs
-        let balance = Fr::zero();
+        // initialize inputs, with correct deposit and deposit flag at true
         let (deposit_tree, deposit) = get_deposit(&poseidon_config, &poseidon_config, false, false);
-        let (external_inputs, z_i_vars, external_inputs_vars) = init(
-            cs.clone(),
-            &[Fr::from(1), Fr::from(1)],
-            Some(Fr::ZERO),
-            None,
-            Some(deposit),
-        );
-        let i = 0;
+        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
+        let external_inputs = init_external_inputs(salt, prev_balance, None, None, Some(deposit));
+        let z_i = [
+            prev_block_hash,
+            nonce,
+            external_inputs
+                .compute_public_state(&poseidon_config)
+                .unwrap(),
+        ];
+        let (z_i_vars, external_inputs_vars) = init_vars(cs.clone(), &z_i, &external_inputs);
 
         // initialize plasma fold circuit
         let field_mt_config = FieldMTConfig {
@@ -207,11 +216,9 @@ pub mod tests {
         };
         let plasma_fold_circuit =
             PlasmaFoldCircuit::<FieldMTConfig, Fr, FieldMTConfigVar>::new(field_mt_config).unwrap();
-
         plasma_fold_circuit
-            .generate_step_constraints(cs.clone(), i, z_i_vars, external_inputs_vars)
+            .generate_step_constraints(cs.clone(), 0, z_i_vars, external_inputs_vars)
             .unwrap();
-
         let is_satisfied = cs.is_satisfied().unwrap();
         assert!(is_satisfied);
         is_satisfied

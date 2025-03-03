@@ -12,31 +12,32 @@ use ark_relations::r1cs::ConstraintSystemRef;
 
 /// Inits
 /// For testing purposes
-pub fn init<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>(
-    cs: ConstraintSystemRef<F>,
-    z_i: &[F],
+pub fn init_external_inputs<P: Config<Leaf = [F]>, F: PrimeField + Absorb>(
+    salt: F,         // required to compute the public state
+    prev_balance: F, // required to compute the public state
     balance: Option<F>,
     block: Option<Block<P>>,
     deposit: Option<Deposit<P, F>>,
-) -> (
-    PlasmaFoldExternalInputs<P, F>,
-    Vec<FpVar<F>>,
-    PlasmaFoldExternalInputsVar<P, F, PG>,
-) {
+) -> PlasmaFoldExternalInputs<P, F> {
     let mut external_inputs = PlasmaFoldExternalInputs::default();
+    external_inputs.salt = salt;
+    external_inputs.prev_balance = prev_balance;
+    if let Some(bal) = balance {
+        external_inputs.balance = bal;
+    }
     if let Some(b) = block {
         external_inputs.block = b;
     }
     if let Some(d) = deposit {
         external_inputs.deposit = d;
     }
-    let (z_i_vars, external_inputs_vars) = initialize_vars(cs.clone(), z_i, &external_inputs);
-    (external_inputs, z_i_vars, external_inputs_vars)
+    // let (z_i_vars, external_inputs_vars) = initialize_vars(cs.clone(), z_i, &external_inputs);
+    external_inputs
 }
 
 /// Initialize relevant constraint inputs for the plasma fold circuit. Returns the initialized
 /// variables and IVC state vector variable
-pub fn initialize_vars<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>(
+pub fn init_vars<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>(
     cs: ConstraintSystemRef<F>,
     z_i: &[F],
     external_inputs: &PlasmaFoldExternalInputs<P, F>,

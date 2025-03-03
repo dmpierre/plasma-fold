@@ -5,9 +5,12 @@ use wasm_bindgen_test::*;
 use web_sys::console;
 wasm_bindgen_test_configure!(run_in_browser);
 
-use plasma_fold::circuits::deposit::tests::{
-    test_deposit_false_deposit_flag_false, test_deposit_true_deposit_flag_false,
-    test_deposit_true_deposit_flag_true,
+use plasma_fold::circuits::{
+    deposit::tests::{
+        test_deposit_false_deposit_flag_false, test_deposit_true_deposit_flag_false,
+        test_deposit_true_deposit_flag_true,
+    },
+    tests::test_n_constraints,
 };
 
 #[wasm_bindgen_test]
