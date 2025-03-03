@@ -314,17 +314,14 @@ pub mod tests {
 
     use ark_bn254::fr::Fr;
     use ark_crypto_primitives::{
-        crh::{
-            poseidon::{
-                constraints::{CRHGadget, TwoToOneCRHGadget},
-                TwoToOneCRH, CRH,
-            },
-            CRHScheme,
+        crh::poseidon::{
+            constraints::{CRHGadget, TwoToOneCRHGadget},
+            TwoToOneCRH, CRH,
         },
         merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter},
         sponge::poseidon::PoseidonConfig,
     };
-    use ark_ff::{AdditiveGroup, Field, PrimeField};
+    use ark_ff::{Field, PrimeField};
     use ark_r1cs_std::fields::fp::FpVar;
     use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::{frontend::FCircuit, transcript::poseidon::poseidon_canonical_config};
@@ -431,6 +428,36 @@ pub mod tests {
     }
 
     pub fn test_public_state_is_enforced() -> bool {
-        true
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let poseidon_config = poseidon_canonical_config::<Fr>();
+
+        let (salt, prev_balance) = (Fr::ONE, Fr::ONE);
+        let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
+
+        // we are going to set the balance to -1
+        let mod_div_2: Fr = Fr::MODULUS_MINUS_ONE_DIV_TWO.into();
+        let external_inputs =
+            init_external_inputs(salt, prev_balance, Some(mod_div_2 + Fr::ONE), None, None);
+        let z_i = [
+            prev_block_hash,
+            nonce,
+            Fr::ONE, // corrupted public state
+        ];
+        let (z_i_vars, external_inputs_vars) = init_vars(cs.clone(), &z_i, &external_inputs);
+
+        let field_mt_config = FieldMTConfig {
+            poseidon_conf: poseidon_config,
+        };
+        let plasma_fold_circuit =
+            PlasmaFoldCircuit::<FieldMTConfig, Fr, FieldMTConfigVar>::new(field_mt_config).unwrap();
+
+        plasma_fold_circuit
+            .generate_step_constraints(cs.clone(), 0, z_i_vars, external_inputs_vars)
+            .unwrap();
+
+        let is_satisfied = cs.is_satisfied().unwrap();
+        // the cs is not satisfied
+        assert!(!is_satisfied);
+        !is_satisfied
     }
 }

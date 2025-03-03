@@ -84,7 +84,7 @@ pub mod tests {
         merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter},
         sponge::poseidon::PoseidonConfig,
     };
-    use ark_ff::{AdditiveGroup, Field, Zero};
+    use ark_ff::Field;
     use ark_r1cs_std::fields::fp::FpVar;
     use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::{frontend::FCircuit, transcript::poseidon::poseidon_canonical_config};
