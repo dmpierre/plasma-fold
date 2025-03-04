@@ -67,10 +67,10 @@ pub fn get_deposit<P: Config<Leaf = [F]>, F: PrimeField>(
 
     // initialize deposit
     let deposit = Deposit {
-        deposit_path: deposit_proof,
-        deposit_root: deposit_tree.root(),
-        deposit_value: leaves[0],
-        deposit_flag,
+        path: deposit_proof,
+        root: deposit_tree.root(),
+        value: leaves[0],
+        flag: deposit_flag,
     };
 
     (deposit_tree, deposit)

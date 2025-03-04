@@ -15,10 +15,12 @@ use ark_r1cs_std::{
     prelude::{Boolean, ToBytesGadget},
 };
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use asset_tree::{AssetTree, AssetTreeVar};
 use block::{Block, BlockVar};
 use deposit::{Deposit, DepositVar};
 use folding_schemes::frontend::FCircuit;
 
+pub mod asset_tree;
 pub mod block;
 pub mod deposit;
 
@@ -34,6 +36,8 @@ pub struct PlasmaFoldExternalInputs<P: Config, F: PrimeField> {
     pub deposit: Deposit<P, F>,
     // block, containing different trees
     pub block: Block<P>,
+    // user's asset tree on the plasma chain
+    pub asset_tree: AssetTree<P, F>,
 }
 
 impl<P: Config<Leaf = [F], LeafDigest = F>, F: PrimeField> PlasmaFoldExternalInputs<P, F> {
@@ -54,6 +58,7 @@ pub struct PlasmaFoldExternalInputsVar<P: Config, F: PrimeField + Absorb, PG: Co
     pub salt: FpVar<F>,
     pub deposit_var: DepositVar<P, F, PG>,
     pub block_var: BlockVar<P, F, PG>,
+    pub asset_tree_var: AssetTreeVar<P, F, PG>,
 }
 
 #[derive(Clone, Debug)]
@@ -124,11 +129,11 @@ where
                 config.clone(),
             )?;
         // let leaf_param = self.poseidon_merkle_tree_params;
-        self.deposit_var.deposit_path.verify_membership(
+        self.deposit_var.path.verify_membership(
             &leaf_crh_params_var,
             &two_to_one_crh_params_var,
-            &self.deposit_var.deposit_root,
-            &self.deposit_var.deposit_value,
+            &self.deposit_var.root,
+            &self.deposit_var.value,
         )
     }
 
@@ -171,6 +176,7 @@ impl<P: Config, F: PrimeField> Default for PlasmaFoldExternalInputs<P, F> {
             balance: F::default(),
             deposit: Deposit::default(),
             block: Block::default(),
+            asset_tree: AssetTree::default(),
         }
     }
 }
@@ -178,7 +184,6 @@ impl<P: Config, F: PrimeField> Default for PlasmaFoldExternalInputs<P, F> {
 impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
     AllocVar<PlasmaFoldExternalInputs<P, F>, F> for PlasmaFoldExternalInputsVar<P, F, PG>
 {
-    // TODO: impl AllocVar for DepositVar
     // TODO: the deposit root is duplicated, remove this duplication
     fn new_variable<T: Borrow<PlasmaFoldExternalInputs<P, F>>>(
         cs: impl Into<Namespace<F>>,
@@ -201,11 +206,16 @@ impl<P: Config, F: PrimeField + Absorb, PG: ConfigGadget<P, F>>
             let block_var = BlockVar::new_witness(ark_relations::ns!(cs, "block"), || {
                 Ok(&external_inputs.block)
             })?;
+            let asset_tree_var =
+                AssetTreeVar::new_witness(ark_relations::ns!(cs, "asset_tree"), || {
+                    Ok(&external_inputs.asset_tree)
+                })?;
             Ok(PlasmaFoldExternalInputsVar {
                 salt,
                 balance,
                 block_var,
                 deposit_var,
+                asset_tree_var,
             })
         })
     }
@@ -252,8 +262,7 @@ where
         external_inputs: Self::ExternalInputsVar, // inputs that are not part of the state
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
         // VALIDATE INPUTS
-        // - Check that h(prev_balance, salt) == z_i[2]
-        // - Check that balance > 0
+        // - Check that h(asset_tree_root, salt) == z_i[2]
         let computed_public_state =
             external_inputs.compute_public_state(cs.clone(), self.mt_config.clone())?;
         computed_public_state.enforce_equal(&z_i[2])?;
@@ -266,19 +275,19 @@ where
         // Check that the deposit logic is correct
         // (deposit is ok and deposit flag is true) or (the deposit is not ok and the deposit flag is false)
         // I.e. we want to ensure that deposit_is_ok == deposit_flag
-        let deposit_flag = &external_inputs.deposit_var.deposit_flag;
+        let deposit_flag = &external_inputs.deposit_var.flag;
         let deposit_is_ok = external_inputs.deposit(cs.clone(), self.mt_config.clone())?;
         deposit_is_ok.enforce_equal(deposit_flag)?;
 
         // Ensure that deposit amount is not negative
-        external_inputs.deposit_var.deposit_value[1]
+        external_inputs.deposit_var.value[1]
             .enforce_smaller_or_equal_than_mod_minus_one_div_two()?;
 
         //  Update balance
         //  When flag is false (0), the balance remains untouched
         let deposit_flag_as_fpvar = deposit_flag.to_bytes_le()?[0].to_fp()?;
-        let new_balance = &external_inputs.balance
-            + &deposit_flag_as_fpvar * &external_inputs.deposit_var.deposit_value[1];
+        let mut new_balance = &external_inputs.balance
+            + &deposit_flag_as_fpvar * &external_inputs.deposit_var.value[1];
 
         // assert that the new balance >= 0
         new_balance.enforce_smaller_or_equal_than_mod_minus_one_div_two()?;

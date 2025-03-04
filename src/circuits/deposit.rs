@@ -7,18 +7,18 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::Boolean};
 
 #[derive(Debug, Clone)]
 pub struct Deposit<P: Config, F: PrimeField> {
-    pub deposit_path: Path<P>, // path from leaf to root of the deposit tree
-    pub deposit_root: P::InnerDigest, // root of the deposit tree
-    pub deposit_value: [F; 2], // (token_index, value)
-    pub deposit_flag: bool,    // indicates whether a deposit occured
+    pub path: Path<P>,        // path from leaf to root of the deposit tree
+    pub root: P::InnerDigest, // root of the deposit tree
+    pub value: [F; 2],        // (token_index, value)
+    pub flag: bool,           // indicates whether a deposit occured
 }
 
 #[derive(Debug, Clone)]
 pub struct DepositVar<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> {
-    pub deposit_path: PathVar<P, F, PG>,
-    pub deposit_root: PG::InnerDigest,
-    pub deposit_value: [FpVar<F>; 2], // (token_index, value)
-    pub deposit_flag: Boolean<F>,
+    pub path: PathVar<P, F, PG>,
+    pub root: PG::InnerDigest,
+    pub value: [FpVar<F>; 2], // (token_index, value)
+    pub flag: Boolean<F>,
 }
 
 impl<P: Config, F: PrimeField> Default for Deposit<P, F> {
@@ -28,10 +28,10 @@ impl<P: Config, F: PrimeField> Default for Deposit<P, F> {
         let default_deposit_value = [F::ZERO, F::ZERO];
         let default_deposit_flag = bool::default(); // false
         return Deposit {
-            deposit_path: default_deposit_path,
-            deposit_root: default_deposit_root,
-            deposit_value: default_deposit_value,
-            deposit_flag: default_deposit_flag,
+            path: default_deposit_path,
+            root: default_deposit_root,
+            value: default_deposit_value,
+            flag: default_deposit_flag,
         };
     }
 }
@@ -48,27 +48,25 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> AllocVar<Deposit<P, F>, F
         let cs = ns.cs();
         f().and_then(|val| {
             let deposit: &Deposit<P, F> = val.borrow();
-            let deposit_root =
+            let root =
                 PG::InnerDigest::new_witness(ark_relations::ns!(cs, "deposit_root"), || {
-                    Ok(&deposit.deposit_root)
+                    Ok(&deposit.root)
                 })?;
-            let deposit_path =
+            let path =
                 PathVar::<P, F, PG>::new_witness(ark_relations::ns!(cs, "deposit_path"), || {
-                    Ok(&deposit.deposit_path)
+                    Ok(&deposit.path)
                 })?;
-            let deposit_value = AllocVar::<[F; 2], F>::new_witness(
+            let value = AllocVar::<[F; 2], F>::new_witness(
                 ark_relations::ns!(cs, "deposit_value"),
-                || Ok(&deposit.deposit_value),
+                || Ok(&deposit.value),
             )?;
-            let deposit_flag =
-                Boolean::new_witness(ark_relations::ns!(cs, "deposit_flag"), || {
-                    Ok(deposit.deposit_flag)
-                })?;
+            let flag =
+                Boolean::new_witness(ark_relations::ns!(cs, "deposit_flag"), || Ok(deposit.flag))?;
             Ok(DepositVar {
-                deposit_path,
-                deposit_root,
-                deposit_value,
-                deposit_flag,
+                path,
+                root,
+                value,
+                flag,
             })
         })
     }
