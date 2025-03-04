@@ -14,13 +14,11 @@ use ark_relations::r1cs::ConstraintSystemRef;
 /// For testing purposes
 pub fn init_external_inputs<P: Config<Leaf = [F]>, F: PrimeField + Absorb>(
     salt: F, // required to compute the public state
-    balance: F,
     block: Option<Block<P>>,
     deposit: Option<Deposit<P, F>>,
 ) -> PlasmaFoldExternalInputs<P, F> {
     let mut external_inputs = PlasmaFoldExternalInputs::default();
     external_inputs.salt = salt;
-    external_inputs.balance = balance;
     if let Some(b) = block {
         external_inputs.block = b;
     }
@@ -53,16 +51,13 @@ pub fn get_deposit<P: Config<Leaf = [F]>, F: PrimeField>(
     deposit_flag: bool,
     deposit_valid: bool,
 ) -> (MerkleTree<P>, Deposit<P, F>) {
-    let mut leaves = [
-        [F::from(123), F::from(456)],
-        [F::from(789), F::from(101112)],
-    ];
+    let mut leaves = [[F::from(123)], [F::from(456)]];
     let deposit_tree = MerkleTree::new(leaf_hash_config, two_to_one_hash_config, leaves).unwrap();
     let deposit_proof = deposit_tree.generate_proof(0).unwrap();
 
     // we change leaves in the case where we want an invalid deposit
     if !deposit_valid {
-        leaves[0] = [F::from(0), F::from(0)];
+        leaves[0] = [F::from(0)];
     }
 
     // initialize deposit
