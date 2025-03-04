@@ -8,7 +8,12 @@ use ark_crypto_primitives::{
 };
 
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::ToBytesGadget};
+use ark_r1cs_std::{
+    alloc::AllocVar,
+    eq::EqGadget,
+    fields::fp::FpVar,
+    prelude::{ToBitsGadget, ToBytesGadget},
+};
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use asset_tree::{
     AssetTree, AssetTreeVar, ProofAssetTreeUpdateFromDeposit, ProofAssetTreeUpdateFromDepositVar,
@@ -149,7 +154,7 @@ where
 
     /// Checking the deposit consists in checking a merkle inclusion proof within a deposit block
     pub fn deposit(
-        &self,
+        &mut self,
         cs: ConstraintSystemRef<F>,
         config: P,
     ) -> Result<FpVar<F>, SynthesisError> {
@@ -170,22 +175,29 @@ where
             )?;
 
         // Check that the deposit is present in the deposit tree
-        // and ensure that deposit_is_ok == deposit_flag (i.e. we can't have a correct deposit but
-        // with flag set to false)
         let deposit_is_ok = self.deposit_var.path.verify_membership(
             &leaf_crh_params_var,
             &two_to_one_crh_params_var,
-            &self.deposit_var.root,
+            &self.block_var.deposit_tree_root,
             &self.deposit_var.value,
         )?;
+        // ensure that deposit_is_ok == deposit_flag
+        // (i.e. we can't have a correct deposit with flag set to false)
         let deposit_flag = &self.deposit_var.flag;
         deposit_is_ok.enforce_equal(deposit_flag)?;
 
         // Ensure that deposit amount is not negative
         // When the flag is false, the asset tree is untouched
         let deposit_flag_as_fp_var = deposit_flag.to_bytes_le()?[0].to_fp()?;
-        let deposit_amount = deposit_flag_as_fp_var * &self.deposit_var.value[0];
+        let deposit_amount = deposit_flag_as_fp_var * &self.deposit_var.value[1];
         deposit_amount.enforce_smaller_or_equal_than_mod_minus_one_div_two()?;
+
+        // make sure the the token index is the one that will be used to update the asset tree
+        // we set the path to the index that we will update
+        let token_index = self.deposit_var.value[0].to_bits_le()?;
+        self.proof_asset_tree_update_from_deposit
+            .prev_value_path
+            .set_leaf_position(token_index);
 
         // Update the asset tree root with the deposit
         let new_leaf_value =
@@ -290,7 +302,7 @@ where
         cs: ConstraintSystemRef<F>,
         i: usize,
         z_i: Vec<FpVar<F>>,
-        external_inputs: Self::ExternalInputsVar, // inputs that are not part of the state
+        mut external_inputs: Self::ExternalInputsVar,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
         // VALIDATE INPUTS
         // - Check that h(asset_tree_root, salt) == z_i[2]
@@ -343,15 +355,21 @@ pub mod tests {
         merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter},
         sponge::poseidon::PoseidonConfig,
     };
-    use ark_ff::{Field, PrimeField};
+    use ark_ff::{AdditiveGroup, Field, PrimeField};
     use ark_r1cs_std::fields::fp::FpVar;
     use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::{frontend::FCircuit, transcript::poseidon::poseidon_canonical_config};
-    use std::borrow::Borrow;
+    use std::{borrow::Borrow, task::Wake};
 
-    use crate::tests::utils::{init_external_inputs, init_vars};
+    use crate::tests::utils::{get_asset_tree, get_deposit, init_external_inputs, init_vars};
 
     use crate::circuits::PlasmaFoldCircuit;
+
+    use super::{
+        asset_tree::{AssetTree, ProofAssetTreeUpdateFromDeposit},
+        block::Block,
+        PlasmaFoldExternalInputs,
+    };
 
     impl Borrow<PoseidonConfig<Fr>> for FieldMTConfig {
         fn borrow(&self) -> &PoseidonConfig<Fr> {
@@ -383,12 +401,34 @@ pub mod tests {
         type TwoToOneHash = TwoToOneCRHGadget<Fr>;
     }
 
-    pub fn test_n_constraints() -> usize {
+    pub fn test_plasmafold_circuit() -> bool {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let poseidon_config = poseidon_canonical_config::<Fr>();
         let (salt, balance) = (Fr::ONE, Fr::ONE);
         let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
-        let external_inputs = init_external_inputs(salt, None, None);
+        let (deposit_tree, deposit) =
+            get_deposit::<FieldMTConfig, Fr>(&poseidon_config, &poseidon_config, true, true);
+        let block: Block<FieldMTConfig> = Block {
+            transaction_tree_root: Fr::ZERO,
+            deposit_tree_root: deposit_tree.root(),
+            withdrawal_tree_root: Fr::ZERO,
+        };
+        let (asset_tree, asset_merkle_tree, leaves) =
+            get_asset_tree::<FieldMTConfig, Fr>(&poseidon_config, &poseidon_config);
+
+        let proof_asset_tree_update_from_deposit = ProofAssetTreeUpdateFromDeposit {
+            prev_value_path: asset_merkle_tree.generate_proof(0).unwrap(), // merkle path in asset tree attesting to leaf value
+            prev_value: leaves[0],      // prev leaf value in asset tree
+            prev_root: asset_tree.root, // prev assset tree root
+        };
+
+        let external_inputs = PlasmaFoldExternalInputs {
+            salt,
+            deposit,
+            block,
+            asset_tree,
+            proof_asset_tree_update_from_deposit,
+        };
         let z_i = [
             prev_block_hash,
             nonce,
@@ -396,6 +436,7 @@ pub mod tests {
                 .compute_public_state(&poseidon_config)
                 .unwrap(),
         ];
+
         let (z_i_vars, external_inputs_vars) = init_vars(cs.clone(), &z_i, &external_inputs);
 
         let field_mt_config = FieldMTConfig {
@@ -410,6 +451,7 @@ pub mod tests {
 
         let is_satisfied = cs.is_satisfied().unwrap();
         assert!(is_satisfied);
-        cs.num_constraints()
+
+        is_satisfied
     }
 }

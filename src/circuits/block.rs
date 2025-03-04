@@ -6,9 +6,9 @@ use ark_r1cs_std::alloc::AllocVar;
 /// We store in the struct the root of each of those three trees
 #[derive(Debug, Clone)]
 pub struct Block<P: Config> {
-    transaction_tree_root: P::InnerDigest,
-    deposit_tree_root: P::InnerDigest,
-    withdrawal_tree_root: P::InnerDigest,
+    pub transaction_tree_root: P::InnerDigest,
+    pub deposit_tree_root: P::InnerDigest,
+    pub withdrawal_tree_root: P::InnerDigest,
 }
 
 impl<P: Config> Default for Block<P> {

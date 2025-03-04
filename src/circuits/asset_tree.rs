@@ -13,7 +13,8 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
 use ark_relations::r1cs::ConstraintSystemRef;
 
-pub const ASSET_TREE_N_TOKENS: usize = 10;
+// should be a power of 2
+pub const ASSET_TREE_N_TOKENS: usize = 16;
 
 #[derive(Debug, Clone)]
 pub struct AssetTree<P: Config> {

@@ -1,5 +1,8 @@
 use crate::circuits::{
-    block::Block, deposit::Deposit, PlasmaFoldExternalInputs, PlasmaFoldExternalInputsVar,
+    asset_tree::{self, AssetTree, ASSET_TREE_N_TOKENS},
+    block::Block,
+    deposit::Deposit,
+    PlasmaFoldExternalInputs, PlasmaFoldExternalInputsVar,
 };
 use ark_crypto_primitives::{
     crh::{CRHScheme, TwoToOneCRHScheme},
@@ -51,13 +54,14 @@ pub fn get_deposit<P: Config<Leaf = [F]>, F: PrimeField>(
     deposit_flag: bool,
     deposit_valid: bool,
 ) -> (MerkleTree<P>, Deposit<P, F>) {
-    let mut leaves = [[F::from(123)], [F::from(456)]];
+    // leaves of the deposit tree
+    let mut leaves = [[F::from(0), F::from(123)], [F::from(1), F::from(456)]];
     let deposit_tree = MerkleTree::new(leaf_hash_config, two_to_one_hash_config, leaves).unwrap();
     let deposit_proof = deposit_tree.generate_proof(0).unwrap();
 
     // we change leaves in the case where we want an invalid deposit
     if !deposit_valid {
-        leaves[0] = [F::from(0)];
+        leaves[0] = [F::from(0), F::from(0)];
     }
 
     // initialize deposit
@@ -69,4 +73,17 @@ pub fn get_deposit<P: Config<Leaf = [F]>, F: PrimeField>(
     };
 
     (deposit_tree, deposit)
+}
+
+/// Get an asset tree
+pub fn get_asset_tree<P: Config<Leaf = [F]>, F: PrimeField>(
+    leaf_hash_config: &<<P as Config>::LeafHash as CRHScheme>::Parameters,
+    two_to_one_hash_config: &<<P as Config>::TwoToOneHash as TwoToOneCRHScheme>::Parameters,
+) -> (AssetTree<P>, MerkleTree<P>, [[F; 1]; ASSET_TREE_N_TOKENS]) {
+    // leaves of the asset tree, all initialized at zero
+    let mut leaves = [[F::ZERO; 1]; ASSET_TREE_N_TOKENS];
+    leaves[1] = [F::from(10)];
+    let tree = MerkleTree::new(leaf_hash_config, two_to_one_hash_config, leaves).unwrap();
+    let asset_tree = AssetTree { root: tree.root() };
+    (asset_tree, tree, leaves)
 }

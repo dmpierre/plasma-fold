@@ -12,7 +12,7 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::Boolean};
 pub struct Deposit<P: Config, F: PrimeField> {
     pub path: Path<P>,        // path from leaf to root of the deposit tree
     pub root: P::InnerDigest, // deposit tree root
-    pub value: [F; 1],        // leaf value
+    pub value: [F; 2],        // leaf value (token index, amount)
     pub flag: bool,           // indicates whether a deposit occured
 }
 
@@ -20,7 +20,7 @@ pub struct Deposit<P: Config, F: PrimeField> {
 pub struct DepositVar<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> {
     pub path: PathVar<P, F, PG>,
     pub root: PG::InnerDigest, // deposit tree root
-    pub value: [FpVar<F>; 1],  // leaf value
+    pub value: [FpVar<F>; 2],  // leaf value (token index, amount)
     pub flag: Boolean<F>,
 }
 
@@ -28,7 +28,7 @@ impl<P: Config, F: PrimeField> Default for Deposit<P, F> {
     fn default() -> Self {
         let default_deposit_path = Path::default();
         let default_deposit_root = P::InnerDigest::default();
-        let default_deposit_value = [F::ZERO];
+        let default_deposit_value = [F::ZERO, F::ZERO];
         let default_deposit_flag = bool::default(); // false
         return Deposit {
             path: default_deposit_path,
@@ -55,7 +55,7 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> AllocVar<Deposit<P, F>, F
                 PG::InnerDigest::new_witness(ark_relations::ns!(cs, "deposit_root"), || {
                     Ok(&deposit.root)
                 })?;
-            let value = AllocVar::<[F; 1], F>::new_witness(
+            let value = AllocVar::<[F; 2], F>::new_witness(
                 ark_relations::ns!(cs, "deposit_value"),
                 || Ok(&deposit.value),
             )?;
