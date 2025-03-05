@@ -8,31 +8,28 @@ use ark_crypto_primitives::merkle_tree::{
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, prelude::Boolean};
 
+/// Deposit proof. The deposit tree root is stored in the `Block` struct
 #[derive(Debug, Clone)]
 pub struct Deposit<P: Config, F: PrimeField> {
-    pub path: Path<P>,        // path from leaf to root of the deposit tree
-    pub root: P::InnerDigest, // deposit tree root
-    pub value: [F; 2],        // leaf value (token index, amount)
-    pub flag: bool,           // indicates whether a deposit occured
+    pub path: Path<P>, // path from leaf to root of the deposit tree
+    pub value: [F; 2], // leaf value (token index, amount)
+    pub flag: bool,    // indicates whether a deposit occured
 }
 
 #[derive(Debug, Clone)]
 pub struct DepositVar<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> {
     pub path: PathVar<P, F, PG>,
-    pub root: PG::InnerDigest, // deposit tree root
-    pub value: [FpVar<F>; 2],  // leaf value (token index, amount)
+    pub value: [FpVar<F>; 2], // leaf value (token index, amount)
     pub flag: Boolean<F>,
 }
 
 impl<P: Config, F: PrimeField> Default for Deposit<P, F> {
     fn default() -> Self {
         let default_deposit_path = Path::default();
-        let default_deposit_root = P::InnerDigest::default();
         let default_deposit_value = [F::ZERO, F::ZERO];
         let default_deposit_flag = bool::default(); // false
         return Deposit {
             path: default_deposit_path,
-            root: default_deposit_root,
             value: default_deposit_value,
             flag: default_deposit_flag,
         };
@@ -51,10 +48,6 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> AllocVar<Deposit<P, F>, F
         let cs = ns.cs();
         f().and_then(|val| {
             let deposit: &Deposit<P, F> = val.borrow();
-            let root =
-                PG::InnerDigest::new_witness(ark_relations::ns!(cs, "deposit_root"), || {
-                    Ok(&deposit.root)
-                })?;
             let value = AllocVar::<[F; 2], F>::new_witness(
                 ark_relations::ns!(cs, "deposit_value"),
                 || Ok(&deposit.value),
@@ -65,12 +58,7 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> AllocVar<Deposit<P, F>, F
                 PathVar::<P, F, PG>::new_witness(ark_relations::ns!(cs, "deposit_path"), || {
                     Ok(&deposit.path)
                 })?;
-            Ok(DepositVar {
-                path,
-                root,
-                value,
-                flag,
-            })
+            Ok(DepositVar { path, value, flag })
         })
     }
 }

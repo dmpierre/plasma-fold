@@ -239,7 +239,7 @@ where
         &self,
         cs: ConstraintSystemRef<F>,
         config: P,
-        new_balance: FpVar<F>,
+        asset_tree_root: FpVar<F>,
     ) -> Result<FpVar<F>, SynthesisError> {
         let crh_params_var = <<PG as ConfigGadget<P, F>>::LeafHash as CRHSchemeGadget<
             <P as Config>::LeafHash,
@@ -248,7 +248,10 @@ where
             ark_relations::ns!(cs, "crh_params"), config.clone()
         )?;
 
-        PG::LeafHash::evaluate(&crh_params_var, &[self.salt.clone(), new_balance.clone()])
+        PG::LeafHash::evaluate(
+            &crh_params_var,
+            &[self.salt.clone(), asset_tree_root.clone()],
+        )
     }
 }
 
@@ -291,7 +294,7 @@ where
         })
     }
 
-    /// the IVC state consists in `[prev_block, nonce, h(prev_balance, salt)]` and indicate whether the account is up to
+    /// the IVC state consists in `[prev_block_hash, nonce, h(asset_tree_root, salt)]` and indicate whether the account is up to
     /// date with the latest block and the rollup contract stored nonce.
     fn state_len(&self) -> usize {
         3
@@ -337,10 +340,17 @@ where
         )?;
 
         // COMPUTE NEW PUBLIC STATE
-        // let next_public_state =
-        //    external_inputs.update_public_state(cs.clone(), self.mt_config.clone(), new_balance)?;
+        let new_public_state = external_inputs.update_public_state(
+            cs.clone(),
+            self.mt_config.clone(),
+            new_asset_tree_root,
+        )?;
 
-        Ok(Vec::from([new_block_hash, z_i[1].clone(), z_i[2].clone()]))
+        Ok(Vec::from([
+            new_block_hash,
+            z_i[1].clone(),
+            new_public_state.clone(),
+        ]))
     }
 }
 
@@ -356,7 +366,7 @@ pub mod tests {
         sponge::poseidon::PoseidonConfig,
     };
     use ark_ff::{AdditiveGroup, Field, PrimeField};
-    use ark_r1cs_std::fields::fp::FpVar;
+    use ark_r1cs_std::{fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::{frontend::FCircuit, transcript::poseidon::poseidon_canonical_config};
     use std::{borrow::Borrow, task::Wake};
@@ -399,6 +409,62 @@ pub mod tests {
         type InnerDigest = FpVar<Fr>;
         type LeafHash = CRHGadget<Fr>;
         type TwoToOneHash = TwoToOneCRHGadget<Fr>;
+    }
+
+    pub fn test_asset_tree_is_not_updated_with_wrong_deposit() -> bool {
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let poseidon_config = poseidon_canonical_config::<Fr>();
+        let (salt, balance) = (Fr::ONE, Fr::ONE);
+        let (prev_block_hash, nonce) = (Fr::ONE, Fr::ONE);
+        let (deposit_tree, mut deposit) =
+            get_deposit::<FieldMTConfig, Fr>(&poseidon_config, &poseidon_config, true, true);
+        let block: Block<FieldMTConfig> = Block {
+            transaction_tree_root: Fr::ZERO,
+            deposit_tree_root: Fr::ZERO, // change the deposit root, deposit proof is invalid
+            withdrawal_tree_root: Fr::ZERO,
+        };
+        // set the flag to false, to not update the asset tree
+        deposit.flag = false;
+        let (asset_tree, asset_merkle_tree, leaves) =
+            get_asset_tree::<FieldMTConfig, Fr>(&poseidon_config, &poseidon_config);
+
+        let proof_asset_tree_update_from_deposit = ProofAssetTreeUpdateFromDeposit {
+            prev_value_path: asset_merkle_tree.generate_proof(0).unwrap(), // merkle path in asset tree attesting to leaf value
+            prev_value: leaves[0],      // prev leaf value in asset tree
+            prev_root: asset_tree.root, // prev assset tree root
+        };
+
+        let external_inputs = PlasmaFoldExternalInputs {
+            salt,
+            deposit,
+            block,
+            asset_tree,
+            proof_asset_tree_update_from_deposit,
+        };
+        let z_i = [
+            prev_block_hash,
+            nonce,
+            external_inputs
+                .compute_public_state(&poseidon_config)
+                .unwrap(),
+        ];
+
+        let (z_i_vars, external_inputs_vars) = init_vars(cs.clone(), &z_i, &external_inputs);
+
+        let field_mt_config = FieldMTConfig {
+            poseidon_conf: poseidon_config,
+        };
+        let plasma_fold_circuit =
+            PlasmaFoldCircuit::<FieldMTConfig, Fr, FieldMTConfigVar>::new(field_mt_config).unwrap();
+
+        let z_i_1 = plasma_fold_circuit
+            .generate_step_constraints(cs.clone(), 0, z_i_vars.clone(), external_inputs_vars)
+            .unwrap();
+
+        let is_satisfied = cs.is_satisfied().unwrap();
+        assert!(is_satisfied);
+        assert_eq!(z_i_1[2].value(), z_i_vars[2].value());
+        is_satisfied
     }
 
     pub fn test_plasmafold_circuit() -> bool {
@@ -445,13 +511,15 @@ pub mod tests {
         let plasma_fold_circuit =
             PlasmaFoldCircuit::<FieldMTConfig, Fr, FieldMTConfigVar>::new(field_mt_config).unwrap();
 
-        plasma_fold_circuit
-            .generate_step_constraints(cs.clone(), 0, z_i_vars, external_inputs_vars)
+        let z_i_1 = plasma_fold_circuit
+            .generate_step_constraints(cs.clone(), 0, z_i_vars.clone(), external_inputs_vars)
             .unwrap();
 
         let is_satisfied = cs.is_satisfied().unwrap();
         assert!(is_satisfied);
 
+        // ensure that asset tree is updated
+        assert_ne!(z_i_1[2].value(), z_i_vars[2].value());
         is_satisfied
     }
 }
