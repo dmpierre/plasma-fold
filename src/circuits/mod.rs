@@ -318,7 +318,6 @@ where
 
         // TRANSFER
         // 1. Check that transfer tree is correct
-        //
 
         // 2. Update balance
         //
@@ -365,20 +364,18 @@ pub mod tests {
         merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter},
         sponge::poseidon::PoseidonConfig,
     };
-    use ark_ff::{AdditiveGroup, Field, PrimeField};
+    use ark_ff::{AdditiveGroup, Field};
     use ark_r1cs_std::{fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::{frontend::FCircuit, transcript::poseidon::poseidon_canonical_config};
-    use std::{borrow::Borrow, task::Wake};
+    use std::borrow::Borrow;
 
-    use crate::tests::utils::{get_asset_tree, get_deposit, init_external_inputs, init_vars};
+    use crate::tests::utils::{get_asset_tree, get_deposit, init_vars};
 
     use crate::circuits::PlasmaFoldCircuit;
 
     use super::{
-        asset_tree::{AssetTree, ProofAssetTreeUpdateFromDeposit},
-        block::Block,
-        PlasmaFoldExternalInputs,
+        asset_tree::ProofAssetTreeUpdateFromDeposit, block::Block, PlasmaFoldExternalInputs,
     };
 
     impl Borrow<PoseidonConfig<Fr>> for FieldMTConfig {
