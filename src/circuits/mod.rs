@@ -25,6 +25,8 @@ use folding_schemes::frontend::FCircuit;
 pub mod asset_tree;
 pub mod block;
 pub mod deposit;
+pub mod signature;
+pub mod utxo_tree;
 
 /// PlasmaFold external inputs are inputs kept private by the plasma chain user. They consist into
 /// all necessary inputs for performing various actions on the plasma chain.
