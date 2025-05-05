@@ -24,6 +24,8 @@ ark-crypto-primitives = { version = "^0.5.0", features = ["r1cs"] }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 ark-bn254 = { version = "0.5.0", features = ["r1cs"] }
 ark-ed-on-bn254 = "0.5.0"
+ark-std = "0.5.0"
+ark-serialize = "0.5.0"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"

@@ -1,7 +1,5 @@
-pub mod circuits;
+pub mod datastructures;
 mod utils;
-
-pub mod tests;
 
 use wasm_bindgen::prelude::*;
 
