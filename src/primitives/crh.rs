@@ -12,7 +12,7 @@ use ark_crypto_primitives::{
 use ark_ff::PrimeField;
 use ark_std::rand::Rng;
 
-use super::Transaction;
+use crate::datastructures::transaction::Transaction;
 
 // computes H(transaction)
 pub struct TransactionCRH<F: PrimeField + Absorb> {

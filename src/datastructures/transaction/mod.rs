@@ -5,11 +5,10 @@ use ark_crypto_primitives::{
 };
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
-use crh::TransactionCRH;
+
+use crate::primitives::crh::TransactionCRH;
 
 use super::{utxo::UTXO, TX_ARRAY_SIZE, TX_IO_SIZE};
-
-pub mod crh;
 
 #[derive(Clone, Copy, Default, CanonicalSerialize)]
 pub struct Transaction<F: PrimeField> {
@@ -37,7 +36,9 @@ impl<F: PrimeField> Absorb for Transaction<F> {
         tx_vec.serialize_uncompressed(dest).unwrap();
     }
 
-    fn to_sponge_field_elements<F_: PrimeField>(&self, dest: &mut Vec<F_>) {
+    fn to_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
+        let tx_vec = Into::<Vec<F>>::into(*self);
+        dest.copy_from_slice(tx_vec.as_slice());
         todo!()
     }
 }
