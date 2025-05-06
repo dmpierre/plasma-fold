@@ -1,4 +1,5 @@
 pub mod datastructures;
+pub mod primitives;
 mod utils;
 
 use wasm_bindgen::prelude::*;
