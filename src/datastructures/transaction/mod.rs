@@ -1,3 +1,4 @@
+use crate::primitives::crh::TransactionCRH;
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
@@ -6,9 +7,7 @@ use ark_crypto_primitives::{
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
 
-use crate::primitives::crh::TransactionCRH;
-
-use super::{utxo::UTXO, TX_ARRAY_SIZE, TX_IO_SIZE};
+use super::{utxo::UTXO, TX_IO_SIZE};
 
 #[derive(Clone, Copy, Default, CanonicalSerialize)]
 pub struct Transaction<F: PrimeField> {
@@ -20,7 +19,6 @@ pub struct Transaction<F: PrimeField> {
 // TX_IO_SIZE * 4 + 1 for the inputs + outputs + nonce
 impl<F: PrimeField> Into<Vec<F>> for Transaction<F> {
     fn into(self) -> Vec<F> {
-        let mut res = [F::ZERO; TX_ARRAY_SIZE];
         let mut input_arr = self.inputs.concat();
         let output_arr = self.outputs.concat();
         input_arr.extend(output_arr);
@@ -36,10 +34,16 @@ impl<F: PrimeField> Absorb for Transaction<F> {
         tx_vec.serialize_uncompressed(dest).unwrap();
     }
 
-    fn to_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
+    // WARNING: using unsafe rust here, since I'm not sure about how to enforce F_ = F.
+    // we preferably would like to avoid this unsafe block, but for now, we assume that in our
+    // usage, we will have F = F_
+    fn to_sponge_field_elements<F_: PrimeField>(&self, dest: &mut Vec<F_>) {
         let tx_vec = Into::<Vec<F>>::into(*self);
-        dest.copy_from_slice(tx_vec.as_slice());
-        todo!()
+        let len = tx_vec.len();
+        let ptr = tx_vec.as_ptr() as *const F_;
+        let slice: &[F_] = unsafe { std::slice::from_raw_parts(ptr, len) };
+        dest.extend_from_slice(slice);
+        std::mem::forget(tx_vec);
     }
 }
 
