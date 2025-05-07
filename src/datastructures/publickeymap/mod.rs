@@ -29,6 +29,10 @@ impl<C: CurveGroup> KeyPair<C> {
         let pk = PublicKey { key: pubk };
         Self { sk, pk }
     }
+
+    pub fn sign() {}
+
+    pub fn verify() {}
 }
 
 pub type PublicKeyMap<C: CurveGroup> = Map<UserId<C::ScalarField>, PublicKey<C>>;
