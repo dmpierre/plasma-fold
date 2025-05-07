@@ -9,7 +9,7 @@ use plasma_fold::{
     datastructures::transaction::{Transaction, TransactionTreeConfig},
     primitives::schnorr::{Schnorr, SchnorrGadget},
 };
-use wasm_bindgen_test::*;
+use wasm_bindgen_test::{__rt::console_log, *};
 
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField, UniformRand};
@@ -20,7 +20,7 @@ use ark_std::rand::thread_rng;
 use num::{BigUint, Zero};
 
 #[wasm_bindgen_test]
-pub fn test_tx_tree_init() {
+pub fn test_absorb_transaction() {
     let config = TransactionTreeConfig {
         poseidon_conf: poseidon_canonical_config::<Fr>(),
     };
@@ -28,7 +28,10 @@ pub fn test_tx_tree_init() {
     let mut dest = Vec::new();
     tx.to_sponge_bytes(&mut dest);
     console_log!("length: {}", dest.len());
-    // TransactionTree::new(&config.poseidon_conf, &config.poseidon_conf, &tx_arr);
+
+    let mut dest = Vec::<Fr>::new();
+    tx.to_sponge_field_elements(&mut dest);
+    console_log!("length: {}", dest.len());
 }
 
 #[wasm_bindgen_test]

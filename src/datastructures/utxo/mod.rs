@@ -1,4 +1,26 @@
+use ark_crypto_primitives::{
+    crh::poseidon::TwoToOneCRH,
+    merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
+    sponge::{poseidon::PoseidonConfig, Absorb},
+};
 use ark_ff::PrimeField;
+
+use crate::primitives::crh::UTXOCRH;
 
 // [amount, id]
 pub type UTXO<F: PrimeField> = [F; 2];
+
+pub type UTXOTree<P: Config> = MerkleTree<P>;
+
+pub struct UTXOTreeConfig<F: PrimeField> {
+    pub poseidon_conf: PoseidonConfig<F>,
+}
+
+impl<F: PrimeField + Absorb> Config for UTXOTreeConfig<F> {
+    type Leaf = UTXO<F>;
+    type LeafDigest = F;
+    type LeafInnerDigestConverter = IdentityDigestConverter<F>;
+    type InnerDigest = F;
+    type LeafHash = UTXOCRH<F>;
+    type TwoToOneHash = TwoToOneCRH<F>;
+}

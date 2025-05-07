@@ -27,27 +27,21 @@ impl<F: PrimeField> Into<Vec<F>> for Transaction<F> {
     }
 }
 
-impl<F: PrimeField> Absorb for Transaction<F> {
+impl<F: PrimeField + Absorb> Absorb for Transaction<F> {
     fn to_sponge_bytes(&self, dest: &mut Vec<u8>) {
         let tx_vec = Into::<Vec<F>>::into(*self);
         // should be ok to unwrap here since we are just serializing a bunch of field elements, not ideal though
         tx_vec.serialize_uncompressed(dest).unwrap();
     }
 
-    // WARNING: using unsafe rust here, since I'm not sure about how to enforce F_ = F.
-    // we preferably would like to avoid this unsafe block, but for now, we assume that in our
-    // usage, we will have F = F_
     fn to_sponge_field_elements<F_: PrimeField>(&self, dest: &mut Vec<F_>) {
         let tx_vec = Into::<Vec<F>>::into(*self);
-        let len = tx_vec.len();
-        let ptr = tx_vec.as_ptr() as *const F_;
-        let slice: &[F_] = unsafe { std::slice::from_raw_parts(ptr, len) };
-        dest.extend_from_slice(slice);
-        std::mem::forget(tx_vec);
+        tx_vec.to_sponge_field_elements(dest);
     }
 }
 
 pub type TransactionTree<P: Config> = MerkleTree<P>;
+
 pub struct TransactionTreeConfig<F: PrimeField> {
     pub poseidon_conf: PoseidonConfig<F>,
 }
