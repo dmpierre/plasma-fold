@@ -17,7 +17,7 @@ pub struct UTXOTreeConfig<F: PrimeField> {
 }
 
 impl<F: PrimeField + Absorb> Config for UTXOTreeConfig<F> {
-    type Leaf = UTXO<F>;
+    type Leaf = [F];
     type LeafDigest = F;
     type LeafInnerDigestConverter = IdentityDigestConverter<F>;
     type InnerDigest = F;
