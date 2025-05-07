@@ -9,7 +9,7 @@ use ark_crypto_primitives::{
     sponge::{poseidon::PoseidonConfig, Absorb},
     Error,
 };
-use ark_ec::{ AffineRepr, CurveGroup};
+use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -37,8 +37,7 @@ impl Schnorr {
         sk: C::ScalarField,
         m: C::BaseField,
         rng: &mut impl Rng,
-    ) -> Result<(C::ScalarField, C::ScalarField), Error>
-    {
+    ) -> Result<(C::ScalarField, C::ScalarField), Error> {
         loop {
             let k = C::ScalarField::rand(rng);
             let (x, y) = C::generator().mul(k).into_affine().xy().unwrap();
@@ -59,8 +58,7 @@ impl Schnorr {
         pk: &C,
         message: C::BaseField,
         (s, e): (C::ScalarField, C::ScalarField),
-    ) -> Result<bool, Error>
-    {
+    ) -> Result<bool, Error> {
         let (x, y) = (C::generator().mul(s) + pk.mul(e))
             .into_affine()
             .xy()
@@ -229,7 +227,7 @@ impl SchnorrGadget {
 
         let g = CVar::constant(C::generator());
         let r = g.scalar_mul_le(s.iter())? + pk.scalar_mul_le(e.iter())?;
-        
+
         let mut xy = r.to_constraint_field()?;
         xy.pop();
         xy.push(m);
@@ -238,14 +236,11 @@ impl SchnorrGadget {
         let mut h_bits = h.to_bits_le()?;
         h_bits.truncate(len);
 
-        BigUintVar::<C::BaseField, W>(h_bits.chunks(W).map(BitsVar::from).collect()).enforce_lt(
-            &BigUintVar::constant(
-                C::ScalarField::MODULUS.into(),
-                len,
-            )?,
-        )?;
+        BigUintVar::<C::BaseField, W>(h_bits.chunks(W).map(BitsVar::from).collect())
+            .enforce_lt(&BigUintVar::constant(C::ScalarField::MODULUS.into(), len)?)?;
 
-        Boolean::le_bits_to_fp(&h_bits[..len - 1])?.enforce_equal(&Boolean::le_bits_to_fp(&e[..len - 1])?)?;
+        Boolean::le_bits_to_fp(&h_bits[..len - 1])?
+            .enforce_equal(&Boolean::le_bits_to_fp(&e[..len - 1])?)?;
         h_bits[len - 1].enforce_equal(&e[len - 1])?;
 
         Ok(())
@@ -259,9 +254,9 @@ mod tests {
     use crate::primitives::schnorr::Schnorr;
 
     use super::*;
+    use ark_bn254::{Fq, Fr};
     use ark_ff::{BigInteger, UniformRand};
-    use ark_bn254::{Fr, Fq};
-    use ark_grumpkin::{Projective, constraints::GVar};
+    use ark_grumpkin::{constraints::GVar, Projective};
     use ark_r1cs_std::prelude::AllocVar;
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::rand::thread_rng;
@@ -367,8 +362,10 @@ mod tests {
         let m = FpVar::new_witness(cs.clone(), || Ok(m)).unwrap();
         let s_bits = s.into_bigint().to_bits_le();
         let e_bits = e.into_bigint().to_bits_le();
-        let s = Vec::new_witness(cs.clone(), || Ok(&s_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
-        let e = Vec::new_witness(cs.clone(), || Ok(&e_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
+        let s =
+            Vec::new_witness(cs.clone(), || Ok(&s_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
+        let e =
+            Vec::new_witness(cs.clone(), || Ok(&e_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
         SchnorrGadget::verify::<W, _, _>(&pp, pk, m, (s, e)).unwrap();
 
         println!("{}", cs.num_constraints());
