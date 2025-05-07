@@ -25,57 +25,53 @@ use num::{BigUint, One, Zero};
 pub struct Schnorr {}
 
 impl Schnorr {
-    pub fn key_gen<C: AffineRepr, R: Rng>(rng: &mut R) -> (C::ScalarField, C) {
+    pub fn key_gen<C: CurveGroup>(rng: &mut impl Rng) -> (C::ScalarField, C) {
         let sk = C::ScalarField::rand(rng);
-        let pk = C::generator().mul(sk).into();
+        let pk = C::generator().mul(sk);
 
         (sk, pk)
     }
 
-    pub fn sign<C, Fr: PrimeField, Fq: PrimeField + Absorb, R: Rng>(
-        pp: &PoseidonConfig<Fq>,
-        sk: Fr,
-        m: Fq,
-        rng: &mut R,
-    ) -> Result<(Fr, Fr), Error>
-    where
-        C: AffineRepr<ScalarField = Fr, BaseField = Fq>,
+    pub fn sign<C: CurveGroup<BaseField: PrimeField + Absorb>>(
+        pp: &PoseidonConfig<C::BaseField>,
+        sk: C::ScalarField,
+        m: C::BaseField,
+        rng: &mut impl Rng,
+    ) -> Result<(C::ScalarField, C::ScalarField), Error>
     {
         loop {
-            let k = Fr::rand(rng);
+            let k = C::ScalarField::rand(rng);
             let (x, y) = C::generator().mul(k).into_affine().xy().unwrap();
 
-            let h = CRH::evaluate(&pp, [x, y, m])?;
+            let h = CRH::evaluate(pp, [x, y, m])?;
             let mut h_bits = h.into_bigint().to_bits_le();
-            h_bits.truncate(Fr::MODULUS_BIT_SIZE as usize + 1);
-            let h = Fr::BigInt::from_bits_le(&h_bits);
+            h_bits.truncate(C::ScalarField::MODULUS_BIT_SIZE as usize + 1);
+            let h = <C::ScalarField as PrimeField>::BigInt::from_bits_le(&h_bits);
 
-            if let Some(e) = Fr::from_bigint(h) {
+            if let Some(e) = C::ScalarField::from_bigint(h) {
                 return Ok((k - sk * e, e));
             };
         }
     }
 
-    pub fn verify<C, Fr: PrimeField, Fq: PrimeField + Absorb>(
-        pp: &PoseidonConfig<Fq>,
+    pub fn verify<C: CurveGroup<BaseField: PrimeField + Absorb>>(
+        pp: &PoseidonConfig<C::BaseField>,
         pk: &C,
-        message: Fq,
-        (s, e): (Fr, Fr),
+        message: C::BaseField,
+        (s, e): (C::ScalarField, C::ScalarField),
     ) -> Result<bool, Error>
-    where
-        C: AffineRepr<ScalarField = Fr, BaseField = Fq>,
     {
         let (x, y) = (C::generator().mul(s) + pk.mul(e))
             .into_affine()
             .xy()
             .unwrap();
 
-        let h = CRH::evaluate(&pp, [x, y, message])?;
+        let h = CRH::evaluate(pp, [x, y, message])?;
         let mut h_bits = h.into_bigint().to_bits_le();
-        h_bits.truncate(Fr::MODULUS_BIT_SIZE as usize);
-        let h = Fr::BigInt::from_bits_le(&h_bits);
+        h_bits.truncate(C::ScalarField::MODULUS_BIT_SIZE as usize);
+        let h = <C::ScalarField as PrimeField>::BigInt::from_bits_le(&h_bits);
 
-        Ok(Fr::from_bigint(h).map_or(false, |i| i == e))
+        Ok(C::ScalarField::from_bigint(h) == Some(e))
     }
 }
 
@@ -226,24 +222,31 @@ impl SchnorrGadget {
         m: FpVar<C::BaseField>,
         (s, e): (Vec<Boolean<C::BaseField>>, Vec<Boolean<C::BaseField>>),
     ) -> Result<(), SynthesisError> {
+        let len = C::ScalarField::MODULUS_BIT_SIZE as usize;
+
+        assert_eq!(e.len(), len);
+        assert_eq!(s.len(), len);
+
         let g = CVar::constant(C::generator());
         let r = g.scalar_mul_le(s.iter())? + pk.scalar_mul_le(e.iter())?;
+        
         let mut xy = r.to_constraint_field()?;
         xy.pop();
         xy.push(m);
 
         let h = CRHGadget::evaluate(pp, &xy)?;
         let mut h_bits = h.to_bits_le()?;
-        h_bits.truncate(C::ScalarField::MODULUS_BIT_SIZE as usize);
+        h_bits.truncate(len);
 
         BigUintVar::<C::BaseField, W>(h_bits.chunks(W).map(BitsVar::from).collect()).enforce_lt(
             &BigUintVar::constant(
                 C::ScalarField::MODULUS.into(),
-                C::ScalarField::MODULUS_BIT_SIZE as usize,
+                len,
             )?,
         )?;
 
-        Boolean::le_bits_to_fp(&h_bits)?.enforce_equal(&Boolean::le_bits_to_fp(&e)?)?;
+        Boolean::le_bits_to_fp(&h_bits[..len - 1])?.enforce_equal(&Boolean::le_bits_to_fp(&e[..len - 1])?)?;
+        h_bits[len - 1].enforce_equal(&e[len - 1])?;
 
         Ok(())
     }
@@ -257,8 +260,8 @@ mod tests {
 
     use super::*;
     use ark_ff::{BigInteger, UniformRand};
-    use ark_bn254::Fr;
-    use ark_grumpkin::{Affine, constraints::GVar};
+    use ark_bn254::{Fr, Fq};
+    use ark_grumpkin::{Projective, constraints::GVar};
     use ark_r1cs_std::prelude::AllocVar;
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::rand::thread_rng;
@@ -340,9 +343,9 @@ mod tests {
         let (ark, mds) = get_poseidon_parameters::<Fr>();
 
         let pp = PoseidonConfig::<Fr>::new(R_F, R_P, ALPHA, mds, ark, WIDTH - 1, 1);
-        let (sk, pk) = Schnorr::key_gen::<Affine, _>(rng);
+        let (sk, pk) = Schnorr::key_gen::<Projective>(rng);
         let m = Fr::rand(rng);
-        let (s, e) = Schnorr::sign::<Affine, _, _, _>(&pp, sk, m, rng).unwrap();
+        let (s, e) = Schnorr::sign::<Projective>(&pp, sk, m, rng).unwrap();
         assert!(Schnorr::verify(&pp, &pk, m, (s, e)).unwrap());
     }
 
@@ -354,16 +357,18 @@ mod tests {
         let (ark, mds) = get_poseidon_parameters::<Fr>();
 
         let pp = PoseidonConfig::<Fr>::new(R_F, R_P, ALPHA, mds, ark, WIDTH - 1, 1);
-        let (sk, pk) = Schnorr::key_gen::<Affine, _>(rng);
+        let (sk, pk) = Schnorr::key_gen::<Projective>(rng);
         let m = Fr::rand(rng);
-        let (s, e) = Schnorr::sign::<Affine, _, _, _>(&pp, sk, m, rng).unwrap();
+        let (s, e) = Schnorr::sign::<Projective>(&pp, sk, m, rng).unwrap();
         assert!(Schnorr::verify(&pp, &pk, m, (s, e)).unwrap());
 
         let pp = CRHParametersVar::new_constant(cs.clone(), pp).unwrap();
-        let pk = GVar::new_witness(cs.clone(), || Ok(pk.into_group())).unwrap();
+        let pk = GVar::new_witness(cs.clone(), || Ok(pk)).unwrap();
         let m = FpVar::new_witness(cs.clone(), || Ok(m)).unwrap();
-        let s = Vec::new_witness(cs.clone(), || Ok(s.into_bigint().to_bits_le())).unwrap();
-        let e = Vec::new_witness(cs.clone(), || Ok(e.into_bigint().to_bits_le())).unwrap();
+        let s_bits = s.into_bigint().to_bits_le();
+        let e_bits = e.into_bigint().to_bits_le();
+        let s = Vec::new_witness(cs.clone(), || Ok(&s_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
+        let e = Vec::new_witness(cs.clone(), || Ok(&e_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
         SchnorrGadget::verify::<W, _, _>(&pp, pk, m, (s, e)).unwrap();
 
         println!("{}", cs.num_constraints());
