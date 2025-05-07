@@ -1,6 +1,6 @@
-use crate::{datastructures::user::UserId, primitives::crh::UserCRH};
+use crate::datastructures::user::UserId;
 use ark_crypto_primitives::{
-    crh::poseidon::TwoToOneCRH,
+    crh::poseidon::{TwoToOneCRH, CRH},
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
@@ -19,6 +19,6 @@ impl<F: PrimeField + Absorb> Config for SignerTreeConfig<F> {
     type LeafDigest = F;
     type LeafInnerDigestConverter = IdentityDigestConverter<F>;
     type InnerDigest = F;
-    type LeafHash = UserCRH<F>;
+    type LeafHash = CRH<F>;
     type TwoToOneHash = TwoToOneCRH<F>;
 }

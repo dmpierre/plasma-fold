@@ -43,10 +43,6 @@ impl<F: PrimeField + Absorb> CRHScheme for TransactionCRH<F> {
     }
 }
 
-// the CRH used for utxos and users is plain poseidon
-pub type UTXOCRH<F: PrimeField> = CRH<F>;
-pub type UserCRH<F: PrimeField> = CRH<F>;
-
 pub struct PublicKeyCRH<F: PrimeField + Absorb, C: CurveGroup<ScalarField = F>> {
     _f: PhantomData<F>,
     _f1: PhantomData<C>,
