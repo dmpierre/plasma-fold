@@ -13,7 +13,7 @@ use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_std::rand::Rng;
 
-use crate::datastructures::{publickeymap::PublicKey, transaction::Transaction};
+use crate::datastructures::{keypair::PublicKey, transaction::Transaction};
 
 // computes H(transaction)
 pub struct TransactionCRH<F: PrimeField + Absorb> {

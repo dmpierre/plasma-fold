@@ -10,30 +10,7 @@ use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 use std::{iter::Map, marker::PhantomData};
 
-use super::user::UserId;
-
-#[derive(Debug, CanonicalSerialize)]
-pub struct PublicKey<C: CurveGroup> {
-    pub key: C,
-}
-
-#[derive(Debug)]
-pub struct KeyPair<C: CurveGroup> {
-    pub sk: C::ScalarField,
-    pub pk: PublicKey<C>,
-}
-
-impl<C: CurveGroup> KeyPair<C> {
-    pub fn new(rng: &mut impl Rng) -> Self {
-        let (sk, pubk) = Schnorr::key_gen::<C>(rng);
-        let pk = PublicKey { key: pubk };
-        Self { sk, pk }
-    }
-
-    pub fn sign() {}
-
-    pub fn verify() {}
-}
+use super::{keypair::PublicKey, user::UserId};
 
 pub type PublicKeyMap<C: CurveGroup> = Map<UserId<C::ScalarField>, PublicKey<C>>;
 pub type PublicKeyTree<P: Config> = MerkleTree<P>;

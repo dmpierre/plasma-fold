@@ -220,10 +220,11 @@ impl SchnorrGadget {
         m: FpVar<C::BaseField>,
         (s, e): (Vec<Boolean<C::BaseField>>, Vec<Boolean<C::BaseField>>),
     ) -> Result<(), SynthesisError> {
+        let len_le_rep_modulus = C::ScalarField::MODULUS.to_bits_le().len();
         let len = C::ScalarField::MODULUS_BIT_SIZE as usize;
 
-        assert_eq!(e.len(), len);
-        assert_eq!(s.len(), len);
+        assert_eq!(e.len(), len_le_rep_modulus);
+        assert_eq!(s.len(), len_le_rep_modulus);
 
         let g = CVar::constant(C::generator());
         let r = g.scalar_mul_le(s.iter())? + pk.scalar_mul_le(e.iter())?;

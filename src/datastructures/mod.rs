@@ -1,3 +1,4 @@
+pub mod keypair;
 pub mod noncemap;
 pub mod publickeymap;
 pub mod signerlist;
