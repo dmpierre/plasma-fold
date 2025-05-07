@@ -6,7 +6,10 @@ use ark_crypto_primitives::{crh::poseidon::constraints::CRHParametersVar, sponge
 use ark_ec::AffineRepr;
 use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 use plasma_fold::{
-    datastructures::transaction::{Transaction, TransactionTreeConfig},
+    datastructures::{
+        publickeymap::KeyPair,
+        transaction::{Transaction, TransactionTreeConfig},
+    },
     primitives::schnorr::{Schnorr, SchnorrGadget},
 };
 use wasm_bindgen_test::{console_log, wasm_bindgen_test, wasm_bindgen_test_configure};
@@ -57,4 +60,11 @@ pub fn test_signature() {
 
     console_log!("num_constraints: {}", cs.num_constraints());
     console_log!("is_satisfied: {}", cs.is_satisfied().unwrap());
+}
+
+#[wasm_bindgen_test]
+pub fn test_absorb_public_key() {
+    let rng = &mut thread_rng();
+    let pp = poseidon_canonical_config::<Fr>();
+    let keypair = KeyPair::<Projective>::new(rng);
 }

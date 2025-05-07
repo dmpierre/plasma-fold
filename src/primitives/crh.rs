@@ -52,7 +52,10 @@ pub struct PublicKeyCRH<F: PrimeField + Absorb, C: CurveGroup<ScalarField = F>> 
     _f1: PhantomData<C>,
 }
 
-impl<F: PrimeField + Absorb, C: CurveGroup<ScalarField = F>> CRHScheme for PublicKeyCRH<F, C> {
+impl<F: PrimeField + Absorb, C: CurveGroup<ScalarField = F>> CRHScheme for PublicKeyCRH<F, C>
+where
+    C::BaseField: Absorb,
+{
     type Input = PublicKey<C>;
     type Output = F;
     type Parameters = PoseidonConfig<F>;
