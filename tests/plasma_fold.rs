@@ -9,15 +9,16 @@ use plasma_fold::{
     datastructures::transaction::{Transaction, TransactionTreeConfig},
     primitives::schnorr::{Schnorr, SchnorrGadget},
 };
-use wasm_bindgen_test::{__rt::console_log, *};
+use wasm_bindgen_test::{console_log, wasm_bindgen_test, wasm_bindgen_test_configure};
 
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField, UniformRand};
-use ark_grumpkin::{constraints::GVar, Affine};
+use ark_grumpkin::constraints::GVar;
+use ark_grumpkin::Projective;
+
 use ark_r1cs_std::{fields::fp::FpVar, prelude::AllocVar};
 use ark_relations::r1cs::ConstraintSystem;
 use ark_std::rand::thread_rng;
-use num::{BigUint, Zero};
 
 #[wasm_bindgen_test]
 pub fn test_absorb_transaction() {
@@ -42,13 +43,13 @@ pub fn test_signature() {
     let rng = &mut thread_rng();
 
     let pp = poseidon_canonical_config();
-    let (sk, pk) = Schnorr::key_gen::<Affine, _>(rng);
+    let (sk, pk) = Schnorr::key_gen::<Projective>(rng);
     let m = Fr::rand(rng);
-    let (s, e) = Schnorr::sign::<Affine, _, _, _>(&pp, sk, m, rng).unwrap();
+    let (s, e) = Schnorr::sign::<Projective>(&pp, sk, m, rng).unwrap();
     assert!(Schnorr::verify(&pp, &pk, m, (s, e)).unwrap());
 
     let pp = CRHParametersVar::new_constant(cs.clone(), pp).unwrap();
-    let pk = GVar::new_witness(cs.clone(), || Ok(pk.into_group())).unwrap();
+    let pk = GVar::new_witness(cs.clone(), || Ok(pk)).unwrap();
     let m = FpVar::new_witness(cs.clone(), || Ok(m)).unwrap();
     let s = Vec::new_witness(cs.clone(), || Ok(s.into_bigint().to_bits_le())).unwrap();
     let e = Vec::new_witness(cs.clone(), || Ok(e.into_bigint().to_bits_le())).unwrap();
