@@ -1,6 +1,5 @@
 // Define the various CRH used in PlasmaFold
-use std::{borrow::Borrow, marker::PhantomData};
-
+use crate::datastructures::{keypair::PublicKey, transaction::Transaction};
 use ark_crypto_primitives::{
     crh::{poseidon::CRH, CRHScheme},
     sponge::{
@@ -12,8 +11,9 @@ use ark_crypto_primitives::{
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_std::rand::Rng;
+use std::{borrow::Borrow, marker::PhantomData};
 
-use crate::datastructures::{keypair::PublicKey, transaction::Transaction};
+pub mod constraints;
 
 // computes H(transaction)
 pub struct TransactionCRH<F: PrimeField + Absorb> {
@@ -35,11 +35,10 @@ impl<F: PrimeField + Absorb> CRHScheme for TransactionCRH<F> {
         parameters: &Self::Parameters,
         input: T,
     ) -> Result<Self::Output, Error> {
-        let input = input.borrow();
-        let mut sponge = PoseidonSponge::new(parameters);
-        sponge.absorb(&input);
-        let res = sponge.squeeze_field_elements::<F>(1);
-        Ok(res[0])
+        let mut elements = Vec::new();
+        input.borrow().to_sponge_field_elements(&mut elements);
+        let res = CRH::evaluate(parameters, elements.as_slice())?;
+        Ok(res)
     }
 }
 

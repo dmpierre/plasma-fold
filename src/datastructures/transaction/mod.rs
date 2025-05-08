@@ -1,3 +1,4 @@
+use super::{utxo::UTXO, TX_IO_SIZE};
 use crate::primitives::crh::TransactionCRH;
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
@@ -7,9 +8,9 @@ use ark_crypto_primitives::{
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
 
-use super::{utxo::UTXO, TX_IO_SIZE};
+pub mod constraints;
 
-#[derive(Clone, Copy, Default, CanonicalSerialize)]
+#[derive(Clone, Debug, Copy, Default, CanonicalSerialize)]
 pub struct Transaction<F: PrimeField> {
     inputs: [UTXO<F>; TX_IO_SIZE],
     outputs: [UTXO<F>; TX_IO_SIZE],

@@ -5,6 +5,8 @@ use ark_crypto_primitives::{
 };
 use ark_ff::PrimeField;
 
+pub mod constraints;
+
 // [amount, id]
 pub type UTXO<F: PrimeField> = [F; 2];
 
