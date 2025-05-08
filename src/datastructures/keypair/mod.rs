@@ -1,9 +1,8 @@
-use crate::primitives::schnorr::BigUintVar;
-use crate::primitives::schnorr::BitsVar;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::alloc::AllocationMode;
 use ark_r1cs_std::convert::ToBitsGadget;
 use ark_r1cs_std::eq::EqGadget;
+use ark_r1cs_std::R1CSVar;
 use ark_relations::r1cs::Namespace;
 use std::borrow::Borrow;
 use std::marker::PhantomData;
@@ -26,6 +25,7 @@ use ark_relations::r1cs::SynthesisError;
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 
+use crate::primitives::schnorr::enforce_lt;
 use crate::primitives::schnorr::Schnorr;
 
 // Schnorr secret key
@@ -145,8 +145,10 @@ impl<C: CurveGroup<BaseField: Absorb + PrimeField>, CVar: CurveVar<C, C::BaseFie
         let mut h_bits = h.to_bits_le()?;
         h_bits.truncate(len);
 
-        BigUintVar::<C::BaseField, W>(h_bits.chunks(W).map(BitsVar::from).collect())
-            .enforce_lt(&BigUintVar::constant(C::ScalarField::MODULUS.into(), len)?)?;
+        enforce_lt::<_, W>(
+            &h_bits,
+            &Vec::new_constant(h.cs(), &C::ScalarField::MODULUS.to_bits_le()[..len])?,
+        )?;
 
         Boolean::le_bits_to_fp(&h_bits[..len - 1])?
             .enforce_equal(&Boolean::le_bits_to_fp(&e[..len - 1])?)?;

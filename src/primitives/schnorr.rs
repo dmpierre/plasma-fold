@@ -73,140 +73,59 @@ impl Schnorr {
     }
 }
 
-#[derive(Clone)]
-pub struct BitsVar<F: PrimeField, const W: usize>(pub FpVar<F>, pub BigUint);
+pub fn enforce_lt<F: PrimeField, const W: usize>(
+    x: &[Boolean<F>],
+    y: &[Boolean<F>],
+) -> Result<(), SynthesisError> {
+    let x = x
+        .chunks(W)
+        .map(Boolean::le_bits_to_fp)
+        .collect::<Result<Vec<_>, _>>()?;
+    let y = y
+        .chunks(W)
+        .map(Boolean::le_bits_to_fp)
+        .collect::<Result<Vec<_>, _>>()?;
 
-impl<F: PrimeField, const W: usize> From<&[Boolean<F>]> for BitsVar<F, W> {
-    fn from(bits: &[Boolean<F>]) -> Self {
-        Self(
-            Boolean::le_bits_to_fp(bits).unwrap(),
-            (BigUint::one() << bits.len()) - BigUint::one(),
-        )
-    }
-}
+    let len = max(x.len(), y.len());
+    let zero = FpVar::zero();
 
-impl<F: PrimeField, const W: usize> R1CSVar<F> for BitsVar<F, W> {
-    type Value = F;
-
-    fn cs(&self) -> ConstraintSystemRef<F> {
-        self.0.cs()
-    }
-
-    fn value(&self) -> Result<Self::Value, SynthesisError> {
-        self.0.value()
-    }
-}
-#[derive(Clone)]
-pub struct BigUintVar<F: PrimeField, const W: usize>(pub Vec<BitsVar<F, W>>);
-
-impl<F: PrimeField, const W: usize> AllocVar<(BigUint, usize), F> for BigUintVar<F, W> {
-    fn new_variable<T: Borrow<(BigUint, usize)>>(
-        cs: impl Into<Namespace<F>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: AllocationMode,
-    ) -> Result<Self, SynthesisError> {
-        let cs = cs.into().cs();
-        let v = f()?;
-        let (x, l) = v.borrow();
-
-        let mut limbs = vec![];
-        for chunk in (0..*l)
-            .map(|i| x.bit(i as u64))
-            .collect::<Vec<_>>()
-            .chunks(W)
-        {
-            let limb = F::from_bigint(F::BigInt::from_bits_le(chunk)).unwrap();
-            let limb = FpVar::new_variable(cs.clone(), || Ok(limb), mode)?;
-            Self::to_bit_array(&limb, chunk.len())?;
-            limbs.push(BitsVar(
-                limb,
-                (BigUint::one() << chunk.len()) - BigUint::one(),
-            ));
-        }
-
-        Ok(Self(limbs))
-    }
-}
-
-impl<F: PrimeField, const W: usize> R1CSVar<F> for BigUintVar<F, W> {
-    type Value = BigUint;
-
-    fn cs(&self) -> ConstraintSystemRef<F> {
-        self.0.cs()
+    let mut delta = vec![];
+    for i in 0..len {
+        delta.push(y.get(i).unwrap_or(&zero) - x.get(i).unwrap_or(&zero));
     }
 
-    fn value(&self) -> Result<Self::Value, SynthesisError> {
-        let mut r = BigUint::zero();
-
-        for limb in self.0.value()?.into_iter().rev() {
-            r <<= W;
-            r += Into::<BigUint>::into(limb);
-        }
-
-        Ok(r)
-    }
-}
-
-impl<F: PrimeField, const W: usize> BigUintVar<F, W> {
-    pub fn constant(v: BigUint, w: usize) -> Result<Self, SynthesisError> {
-        Self::new_constant(ConstraintSystemRef::None, (v, w))
-    }
-
-    pub fn enforce_lt(&self, other: &Self) -> Result<(), SynthesisError> {
-        let len = max(self.0.len(), other.0.len());
-        let zero = BitsVar(FpVar::zero(), BigUint::zero());
-
-        let mut delta = vec![];
-        for i in 0..len {
-            delta.push(&other.0.get(i).unwrap_or(&zero).0 - &self.0.get(i).unwrap_or(&zero).0);
-        }
-
-        let helper = {
-            let cs = self.cs().or(other.cs());
-            let mut helper = vec![false; len];
-            for i in (0..len).rev() {
-                let x = self.0.get(i).unwrap_or(&zero).value().unwrap_or_default();
-                let y = other.0.get(i).unwrap_or(&zero).value().unwrap_or_default();
-                if y > x {
-                    helper[i] = true;
-                    break;
-                }
+    let helper = {
+        let cs = x.cs().or(y.cs());
+        let mut helper = vec![false; len];
+        for i in (0..len).rev() {
+            let x = x.get(i).unwrap_or(&zero).value().unwrap_or_default();
+            let y = y.get(i).unwrap_or(&zero).value().unwrap_or_default();
+            if y > x {
+                helper[i] = true;
+                break;
             }
-            if cs.is_none() {
-                Vec::<Boolean<F>>::new_constant(cs, helper)?
-            } else {
-                Vec::new_witness(cs, || Ok(helper))?
-            }
-        };
-
-        let mut c = FpVar::<F>::zero();
-        let mut r = FpVar::zero();
-        for (b, d) in helper.into_iter().zip(delta) {
-            c += b.select(&d, &FpVar::zero())?;
-            (&r * &d).enforce_equal(&FpVar::zero())?;
-            r += FpVar::from(b);
         }
-        Self::to_bit_array(&(c - FpVar::one()), W)?;
-        r.enforce_equal(&FpVar::one())?;
+        Vec::<Boolean<_>>::new_variable_with_inferred_mode(cs, || Ok(helper))?
+    };
 
-        Ok(())
+    let mut c = FpVar::<F>::zero();
+    let mut r = FpVar::zero();
+    for (b, d) in helper.into_iter().zip(delta) {
+        c += b.select(&d, &FpVar::zero())?;
+        (&r * &d).enforce_equal(&FpVar::zero())?;
+        r += FpVar::from(b);
     }
+    c -= FpVar::one();
 
-    fn to_bit_array(x: &FpVar<F>, length: usize) -> Result<Vec<Boolean<F>>, SynthesisError> {
-        let cs = x.cs();
+    let bits = &c.value().unwrap_or_default().into_bigint().to_bits_le()[..W];
+    let bits = Vec::new_variable_with_inferred_mode(c.cs(), || Ok(bits))?;
 
-        let bits = &x.value().unwrap_or_default().into_bigint().to_bits_le()[..length];
-        let bits = if cs.is_none() {
-            Vec::new_constant(cs, bits)?
-        } else {
-            Vec::new_witness(cs, || Ok(bits))?
-        };
+    Boolean::le_bits_to_fp(&bits)?.enforce_equal(&c)?;
+    r.enforce_equal(&FpVar::one())?;
 
-        Boolean::le_bits_to_fp(&bits)?.enforce_equal(x)?;
-
-        Ok(bits)
-    }
+    Ok(())
 }
+
 pub struct SchnorrGadget {}
 
 impl SchnorrGadget {
@@ -237,8 +156,10 @@ impl SchnorrGadget {
         let mut h_bits = h.to_bits_le()?;
         h_bits.truncate(len);
 
-        BigUintVar::<C::BaseField, W>(h_bits.chunks(W).map(BitsVar::from).collect())
-            .enforce_lt(&BigUintVar::constant(C::ScalarField::MODULUS.into(), len)?)?;
+        enforce_lt::<_, W>(
+            &h_bits,
+            &Vec::new_constant(h.cs(), &C::ScalarField::MODULUS.to_bits_le()[..len])?,
+        )?;
 
         Boolean::le_bits_to_fp(&h_bits[..len - 1])?
             .enforce_equal(&Boolean::le_bits_to_fp(&e[..len - 1])?)?;
