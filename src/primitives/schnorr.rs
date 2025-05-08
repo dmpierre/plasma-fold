@@ -12,15 +12,14 @@ use ark_crypto_primitives::{
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{
-    alloc::{AllocVar, AllocationMode},
+    alloc::AllocVar,
     convert::ToBitsGadget,
     fields::fp::FpVar,
     prelude::{Boolean, CurveVar, EqGadget, FieldVar},
     R1CSVar,
 };
-use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
-use ark_std::{borrow::Borrow, cmp::max, rand::Rng, UniformRand};
-use num::{BigUint, One, Zero};
+use ark_relations::r1cs::SynthesisError;
+use ark_std::{cmp::max, rand::Rng, UniformRand};
 
 pub struct Schnorr {}
 
@@ -135,15 +134,11 @@ impl SchnorrGadget {
         CVar: CurveVar<C, C::BaseField>,
     >(
         pp: &CRHParametersVar<C::BaseField>,
-        pk: CVar,
+        pk: &CVar,
         m: FpVar<C::BaseField>,
         (s, e): (Vec<Boolean<C::BaseField>>, Vec<Boolean<C::BaseField>>),
     ) -> Result<(), SynthesisError> {
-        let len_le_rep_modulus = C::ScalarField::MODULUS.to_bits_le().len();
         let len = C::ScalarField::MODULUS_BIT_SIZE as usize;
-
-        assert_eq!(e.len(), len_le_rep_modulus);
-        assert_eq!(s.len(), len_le_rep_modulus);
 
         let g = CVar::constant(C::generator());
         let r = g.scalar_mul_le(s.iter())? + pk.scalar_mul_le(e.iter())?;
@@ -288,7 +283,7 @@ mod tests {
             Vec::new_witness(cs.clone(), || Ok(&s_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
         let e =
             Vec::new_witness(cs.clone(), || Ok(&e_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
-        SchnorrGadget::verify::<W, _, _>(&pp, pk, m, (s, e)).unwrap();
+        SchnorrGadget::verify::<W, _, _>(&pp, &pk, m, (s, e)).unwrap();
 
         println!("{}", cs.num_constraints());
         assert!(cs.is_satisfied().unwrap());

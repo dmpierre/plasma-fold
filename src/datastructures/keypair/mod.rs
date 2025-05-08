@@ -1,32 +1,23 @@
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::alloc::AllocationMode;
-use ark_r1cs_std::convert::ToBitsGadget;
-use ark_r1cs_std::eq::EqGadget;
-use ark_r1cs_std::R1CSVar;
 use ark_relations::r1cs::Namespace;
 use std::borrow::Borrow;
 use std::marker::PhantomData;
 
 use ark_crypto_primitives::{
-    crh::{
-        poseidon::{
-            constraints::{CRHGadget, CRHParametersVar},
-            CRH,
-        },
-        CRHScheme, CRHSchemeGadget,
-    },
+    crh::poseidon::constraints::CRHParametersVar,
     sponge::{poseidon::PoseidonConfig, Absorb},
     Error,
 };
-use ark_ec::{AffineRepr, CurveGroup};
+use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar, prelude::Boolean};
 use ark_relations::r1cs::SynthesisError;
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 
-use crate::primitives::schnorr::enforce_lt;
 use crate::primitives::schnorr::Schnorr;
+use crate::primitives::schnorr::SchnorrGadget;
 
 // Schnorr secret key
 #[derive(Debug, CanonicalSerialize)]
@@ -41,22 +32,8 @@ impl<F: PrimeField> SecretKey<F> {
         m: C::BaseField,
         rng: &mut impl Rng,
     ) -> Result<Signature<C::ScalarField>, Error> {
-        loop {
-            let k = C::ScalarField::rand(rng);
-            let (x, y) = C::generator().mul(k).into_affine().xy().unwrap();
-
-            let h = CRH::evaluate(pp, [x, y, m])?;
-            let mut h_bits = h.into_bigint().to_bits_le();
-            h_bits.truncate(C::ScalarField::MODULUS_BIT_SIZE as usize + 1);
-            let h = <C::ScalarField as PrimeField>::BigInt::from_bits_le(&h_bits);
-
-            if let Some(e) = C::ScalarField::from_bigint(h) {
-                return Ok(Signature {
-                    s: k - self.key * e,
-                    e,
-                });
-            };
-        }
+        let (s, e) = Schnorr::sign::<C>(pp, self.key, m, rng)?;
+        Ok(Signature { s, e })
     }
 }
 
@@ -109,17 +86,7 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> PublicKey<C> {
         message: C::BaseField,
         Signature { s, e }: &Signature<C::ScalarField>,
     ) -> Result<bool, Error> {
-        let (x, y) = (C::generator().mul(s) + self.key.mul(e))
-            .into_affine()
-            .xy()
-            .unwrap();
-
-        let h = CRH::evaluate(pp, [x, y, message])?;
-        let mut h_bits = h.into_bigint().to_bits_le();
-        h_bits.truncate(C::ScalarField::MODULUS_BIT_SIZE as usize);
-        let h = <C::ScalarField as PrimeField>::BigInt::from_bits_le(&h_bits);
-
-        Ok(C::ScalarField::from_bigint(h) == Some(*e))
+        Schnorr::verify::<C>(pp, &self.key, message, (*s, *e))
     }
 }
 
@@ -132,29 +99,7 @@ impl<C: CurveGroup<BaseField: Absorb + PrimeField>, CVar: CurveVar<C, C::BaseFie
         m: FpVar<C::BaseField>,
         SignatureVar { s, e }: SignatureVar<C::BaseField>,
     ) -> Result<(), SynthesisError> {
-        let len = C::ScalarField::MODULUS_BIT_SIZE as usize;
-
-        let g = CVar::constant(C::generator());
-        let r = g.scalar_mul_le(s.iter())? + self.key.scalar_mul_le(e.iter())?;
-
-        let mut xy = r.to_constraint_field()?;
-        xy.pop();
-        xy.push(m);
-
-        let h = CRHGadget::evaluate(pp, &xy)?;
-        let mut h_bits = h.to_bits_le()?;
-        h_bits.truncate(len);
-
-        enforce_lt::<_, W>(
-            &h_bits,
-            &Vec::new_constant(h.cs(), &C::ScalarField::MODULUS.to_bits_le()[..len])?,
-        )?;
-
-        Boolean::le_bits_to_fp(&h_bits[..len - 1])?
-            .enforce_equal(&Boolean::le_bits_to_fp(&e[..len - 1])?)?;
-        h_bits[len - 1].enforce_equal(&e[len - 1])?;
-
-        Ok(())
+        SchnorrGadget::verify::<W, C, CVar>(pp, &self.key, m, (s, e))
     }
 }
 

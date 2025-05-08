@@ -61,7 +61,7 @@ pub fn test_signature() {
     let s = Vec::new_witness(cs.clone(), || Ok(s.into_bigint().to_bits_le())).unwrap();
     let e = Vec::new_witness(cs.clone(), || Ok(e.into_bigint().to_bits_le())).unwrap();
 
-    SchnorrGadget::verify::<W, _, _>(&pp, pk, m, (s, e)).unwrap();
+    SchnorrGadget::verify::<W, _, _>(&pp, &pk, m, (s, e)).unwrap();
     console_log!("num_constraints: {}", cs.num_constraints());
     console_log!("is_satisfied: {}", cs.is_satisfied().unwrap());
 }
