@@ -72,22 +72,20 @@ pub fn test_keypair() {
     let cs = ConstraintSystem::<Fr>::new_ref();
     let rng = &mut thread_rng();
     let pp = poseidon_canonical_config::<Fr>();
-    let keypair = KeyPair::<Projective>::new(rng);
+    let KeyPair { sk, pk } = KeyPair::<Projective>::new(rng);
     let m = Fr::rand(rng);
-    let signature = keypair.sign(&pp, m, rng).unwrap();
-    assert!(keypair.pk.verify_signature(&pp, m, signature).unwrap());
+    let signature = sk.sign::<Projective>(&pp, m, rng).unwrap();
+    assert!(pk.verify_signature(&pp, m, &signature).unwrap());
 
     let pp = CRHParametersVar::new_constant(cs.clone(), pp).unwrap();
-    let pk_var_point = GVar::new_witness(cs.clone(), || Ok(keypair.pk.key)).unwrap();
+    let pk_var_point = GVar::new_witness(cs.clone(), || Ok(pk.key)).unwrap();
     let pk_var = PublicKeyVar {
         key: pk_var_point,
         _f: PhantomData::<Projective>,
     };
     let m = FpVar::new_witness(cs.clone(), || Ok(m)).unwrap();
 
-    let s = Vec::new_witness(cs.clone(), || Ok(signature.0.into_bigint().to_bits_le())).unwrap();
-    let e = Vec::new_witness(cs.clone(), || Ok(signature.1.into_bigint().to_bits_le())).unwrap();
-    let sig_var: SignatureVar<Projective> = (s, e);
+    let sig_var = SignatureVar::new_witness(cs.clone(), || Ok(signature)).unwrap();
 
     pk_var.verify_signature::<W>(&pp, m, sig_var).unwrap();
 
