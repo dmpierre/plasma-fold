@@ -40,7 +40,7 @@ pub fn test_absorb_transaction() {
     let config = TransactionTreeConfig {
         poseidon_conf: poseidon_canonical_config::<Fr>(),
     };
-    let tx = Transaction::<Fr>::default();
+    let tx = Transaction::default();
     let mut dest = Vec::new();
     tx.to_sponge_bytes(&mut dest);
     console_log!("length: {}", dest.len());
