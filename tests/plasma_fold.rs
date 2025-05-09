@@ -4,7 +4,14 @@ wasm_bindgen_test_configure!(run_in_browser);
 extern crate wasm_bindgen_test;
 use std::marker::PhantomData;
 
-use ark_crypto_primitives::{crh::poseidon::constraints::CRHParametersVar, sponge::Absorb};
+use ark_crypto_primitives::{
+    crh::{
+        poseidon::constraints::CRHParametersVar,
+        sha256::{self, constraints::UnitVar},
+        TwoToOneCRHSchemeGadget,
+    },
+    sponge::Absorb,
+};
 use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 use plasma_fold::{
     datastructures::{
@@ -20,9 +27,10 @@ use ark_ff::{BigInteger, PrimeField, UniformRand};
 use ark_grumpkin::constraints::GVar;
 use ark_grumpkin::Projective;
 
+use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
 use ark_r1cs_std::{
     fields::fp::FpVar,
-    prelude::{AllocVar, Boolean},
+    prelude::{AllocVar, Boolean, ToBitsGadget, ToBytesGadget},
 };
 use ark_relations::r1cs::ConstraintSystem;
 use ark_std::rand::thread_rng;
@@ -91,4 +99,23 @@ pub fn test_keypair() {
 
     console_log!("num_constraints: {}", cs.num_constraints());
     console_log!("is_satisfied: {}", cs.is_satisfied().unwrap());
+}
+
+#[wasm_bindgen_test]
+pub fn test_constraints_sha256() {
+    let cs = ConstraintSystem::<Fr>::new_ref();
+    let rng = &mut thread_rng();
+
+    let a = FpVar::new_witness(cs.clone(), || Ok(Fr::rand(rng))).unwrap();
+    let b = FpVar::new_witness(cs.clone(), || Ok(Fr::rand(rng))).unwrap();
+    let unit_var = UnitVar::default();
+    let res = Sha256Gadget::evaluate(
+        &unit_var,
+        a.to_bytes_le().unwrap().as_slice(),
+        b.to_bytes_le().unwrap().as_slice(),
+    )
+    .unwrap();
+
+    console_log!("sha256 num_constraints: {}", cs.num_constraints());
+    console_log!("sha256 is_satisfied: {}", cs.is_satisfied().unwrap());
 }
