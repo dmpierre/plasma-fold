@@ -4,3 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+plasma-fold = { path = "../plasma-fold/" }
+folding-schemes = { workspace = true }
+ark-r1cs-std = { workspace = true }
+ark-ff = { workspace = true }
+ark-relations = { workspace = true, default-features = false}
+ark-crypto-primitives = { workspace = true, features = ["r1cs", "crh", "sponge"] }
+ark-bn254 = { workspace = true, features = ["r1cs"] }
+ark-grumpkin = { workspace = true, features = ["r1cs"] }
+ark-std = { workspace = true } 
+ark-serialize = { workspace = true } 
+ark-ec = { workspace = true } 

@@ -31,6 +31,12 @@ impl<F: PrimeField> Into<Vec<F>> for Transaction {
     }
 }
 
+impl AsRef<Transaction> for Transaction {
+    fn as_ref(&self) -> &Transaction {
+        todo!()
+    }
+}
+
 impl Absorb for Transaction {
     fn to_sponge_bytes(&self, dest: &mut Vec<u8>) {
         for utxo in self.inputs.iter().chain(&self.outputs) {
