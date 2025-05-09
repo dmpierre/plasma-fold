@@ -27,19 +27,17 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> Absorb for PublicKey<C> {
     }
 }
 
-pub struct PublicKeyTreeConfig<F: PrimeField, C: CurveGroup<ScalarField = F>> {
-    pub poseidon_conf: PoseidonConfig<F>,
-    _f: PhantomData<C>,
+pub struct PublicKeyTreeConfig<C: CurveGroup<BaseField: PrimeField + Absorb>> {
+    pub poseidon_conf: PoseidonConfig<C::BaseField>,
+    _c: PhantomData<C>,
 }
 
-impl<F: PrimeField + Absorb, C: CurveGroup<ScalarField = F>> Config for PublicKeyTreeConfig<F, C>
-where
-    C::BaseField: Absorb,
+impl<C: CurveGroup<BaseField: PrimeField + Absorb>> Config for PublicKeyTreeConfig<C>
 {
     type Leaf = PublicKey<C>;
-    type LeafDigest = F;
-    type LeafInnerDigestConverter = IdentityDigestConverter<F>;
-    type InnerDigest = F;
-    type LeafHash = PublicKeyCRH<F, C>;
-    type TwoToOneHash = TwoToOneCRH<F>;
+    type LeafDigest = C::BaseField;
+    type LeafInnerDigestConverter = IdentityDigestConverter<C::BaseField>;
+    type InnerDigest = C::BaseField;
+    type LeafHash = PublicKeyCRH<C>;
+    type TwoToOneHash = TwoToOneCRH<C::BaseField>;
 }

@@ -42,18 +42,15 @@ impl<F: PrimeField + Absorb> CRHScheme for TransactionCRH<F> {
     }
 }
 
-pub struct PublicKeyCRH<F: PrimeField + Absorb, C: CurveGroup<ScalarField = F>> {
-    _f: PhantomData<F>,
-    _f1: PhantomData<C>,
+pub struct PublicKeyCRH<C: CurveGroup> {
+    _c: PhantomData<C>,
 }
 
-impl<F: PrimeField + Absorb, C: CurveGroup<ScalarField = F>> CRHScheme for PublicKeyCRH<F, C>
-where
-    C::BaseField: Absorb,
+impl<C: CurveGroup<BaseField: PrimeField + Absorb>> CRHScheme for PublicKeyCRH<C>
 {
     type Input = PublicKey<C>;
-    type Output = F;
-    type Parameters = PoseidonConfig<F>;
+    type Output = C::BaseField;
+    type Parameters = PoseidonConfig<C::BaseField>;
 
     fn setup<R: Rng>(_rng: &mut R) -> Result<Self::Parameters, Error> {
         // automatic generation of parameters are not implemented yet
@@ -68,7 +65,7 @@ where
         let input = input.borrow();
         let mut sponge = PoseidonSponge::new(parameters);
         sponge.absorb(&input);
-        let res = sponge.squeeze_field_elements::<F>(1);
+        let res = sponge.squeeze_field_elements::<C::BaseField>(1);
         Ok(res[0])
     }
 }
