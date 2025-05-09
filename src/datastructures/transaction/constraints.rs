@@ -34,8 +34,8 @@ pub struct TransactionVar<F: PrimeField> {
     nonce: FpVar<F>,
 }
 
-impl<F: PrimeField> AllocVar<Transaction<F>, F> for TransactionVar<F> {
-    fn new_variable<T: std::borrow::Borrow<Transaction<F>>>(
+impl<F: PrimeField> AllocVar<Transaction, F> for TransactionVar<F> {
+    fn new_variable<T: std::borrow::Borrow<Transaction>>(
         cs: impl Into<ark_relations::r1cs::Namespace<F>>,
         f: impl FnOnce() -> Result<T, ark_relations::r1cs::SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,

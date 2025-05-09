@@ -16,7 +16,7 @@ pub struct WithdrawTreeConfig<F: PrimeField> {
 }
 
 impl<F: PrimeField + Absorb> Config for WithdrawTreeConfig<F> {
-    type Leaf = Transaction<F>;
+    type Leaf = Transaction;
     type LeafDigest = F;
     type LeafInnerDigestConverter = IdentityDigestConverter<F>;
     type InnerDigest = F;

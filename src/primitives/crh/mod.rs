@@ -1,5 +1,5 @@
 // Define the various CRH used in PlasmaFold
-use crate::datastructures::{keypair::PublicKey, transaction::Transaction};
+use crate::datastructures::{keypair::PublicKey, noncemap::Nonce, transaction::Transaction};
 use ark_crypto_primitives::{
     crh::{poseidon::CRH, CRHScheme},
     sponge::{
@@ -21,7 +21,7 @@ pub struct TransactionCRH<F: PrimeField + Absorb> {
 }
 
 impl<F: PrimeField + Absorb> CRHScheme for TransactionCRH<F> {
-    type Input = Transaction<F>;
+    type Input = Transaction;
     type Output = F;
     type Parameters = PoseidonConfig<F>;
 
@@ -52,6 +52,34 @@ where
     C::BaseField: Absorb,
 {
     type Input = PublicKey<C>;
+    type Output = F;
+    type Parameters = PoseidonConfig<F>;
+
+    fn setup<R: Rng>(_rng: &mut R) -> Result<Self::Parameters, Error> {
+        // automatic generation of parameters are not implemented yet
+        // therefore, the developers must specify the parameters themselves
+        unimplemented!()
+    }
+
+    fn evaluate<T: Borrow<Self::Input>>(
+        parameters: &Self::Parameters,
+        input: T,
+    ) -> Result<Self::Output, Error> {
+        let input = input.borrow();
+        let mut sponge = PoseidonSponge::new(parameters);
+        sponge.absorb(&input);
+        let res = sponge.squeeze_field_elements::<F>(1);
+        Ok(res[0])
+    }
+}
+
+pub struct NonceCRH<F: PrimeField + Absorb> {
+    _f: PhantomData<F>,
+}
+
+impl<F: PrimeField + Absorb> CRHScheme for NonceCRH<F>
+{
+    type Input = [Nonce];
     type Output = F;
     type Parameters = PoseidonConfig<F>;
 

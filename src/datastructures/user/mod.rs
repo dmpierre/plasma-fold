@@ -1,7 +1,7 @@
 use ark_ff::PrimeField;
 
-pub type UserId<F: PrimeField> = F;
+pub type UserId = u32;
 
-pub struct User<F> {
-    id: UserId<F>,
+pub struct User {
+    id: UserId,
 }

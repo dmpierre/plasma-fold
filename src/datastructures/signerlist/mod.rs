@@ -6,7 +6,7 @@ use ark_crypto_primitives::{
 };
 use ark_ff::PrimeField;
 
-pub type SignerList<F: PrimeField> = Vec<UserId<F>>;
+pub type SignerList = Vec<UserId>;
 
 pub type SignerTree<P: Config> = MerkleTree<P>;
 

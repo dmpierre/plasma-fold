@@ -4,11 +4,17 @@ use ark_crypto_primitives::{
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ff::PrimeField;
+use ark_serialize::CanonicalSerialize;
+
+use super::user::UserId;
 
 pub mod constraints;
 
-// [amount, id]
-pub type UTXO<F: PrimeField> = [F; 2];
+#[derive(Clone, Debug, Copy, Default, CanonicalSerialize)]
+pub struct UTXO {
+    pub amount: u64,
+    pub id: UserId,
+}
 
 pub type UTXOTree<P: Config> = MerkleTree<P>;
 

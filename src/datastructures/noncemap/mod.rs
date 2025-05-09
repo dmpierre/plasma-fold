@@ -1,14 +1,16 @@
+use crate::primitives::crh::NonceCRH;
+
 use super::user::UserId;
 use ark_crypto_primitives::{
-    crh::poseidon::{TwoToOneCRH, CRH},
+    crh::poseidon::TwoToOneCRH,
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ff::PrimeField;
 use std::iter::Map;
 
-pub type Nonce<F: PrimeField> = F;
-pub type NonceMap<F: PrimeField> = Map<UserId<F>, F>;
+pub type Nonce = u64;
+pub type NonceMap = Map<UserId, Nonce>;
 pub type NonceTree<P: Config> = MerkleTree<P>;
 
 pub struct NonceTreeConfig<F: PrimeField> {
@@ -16,10 +18,10 @@ pub struct NonceTreeConfig<F: PrimeField> {
 }
 
 impl<F: PrimeField + Absorb> Config for NonceTreeConfig<F> {
-    type Leaf = [Nonce<F>];
+    type Leaf = [Nonce];
     type LeafDigest = F;
     type LeafInnerDigestConverter = IdentityDigestConverter<F>;
     type InnerDigest = F;
-    type LeafHash = CRH<F>;
+    type LeafHash = NonceCRH<F>;
     type TwoToOneHash = TwoToOneCRH<F>;
 }

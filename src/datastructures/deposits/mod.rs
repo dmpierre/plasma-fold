@@ -16,7 +16,7 @@ pub struct DepositTreeConfig<F: PrimeField> {
 }
 
 impl<F: PrimeField + Absorb> Config for DepositTreeConfig<F> {
-    type Leaf = Transaction<F>;
+    type Leaf = Transaction;
     type LeafDigest = F;
     type LeafInnerDigestConverter = IdentityDigestConverter<F>;
     type InnerDigest = F;

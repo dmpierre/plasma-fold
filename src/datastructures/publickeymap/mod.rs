@@ -12,7 +12,7 @@ use std::{iter::Map, marker::PhantomData};
 
 use super::{keypair::PublicKey, user::UserId};
 
-pub type PublicKeyMap<C: CurveGroup> = Map<UserId<C::ScalarField>, PublicKey<C>>;
+pub type PublicKeyMap<C: CurveGroup> = Map<UserId, PublicKey<C>>;
 pub type PublicKeyTree<P: Config> = MerkleTree<P>;
 
 impl<F: PrimeField + Absorb, C: CurveGroup<ScalarField = F>> Absorb for PublicKey<C>

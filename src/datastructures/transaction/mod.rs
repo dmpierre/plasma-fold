@@ -1,4 +1,4 @@
-use super::{utxo::UTXO, TX_IO_SIZE};
+use super::{noncemap::Nonce, utxo::UTXO, TX_IO_SIZE};
 use crate::primitives::crh::TransactionCRH;
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
@@ -11,33 +11,38 @@ use ark_serialize::CanonicalSerialize;
 pub mod constraints;
 
 #[derive(Clone, Debug, Copy, Default, CanonicalSerialize)]
-pub struct Transaction<F: PrimeField> {
-    inputs: [UTXO<F>; TX_IO_SIZE],
-    outputs: [UTXO<F>; TX_IO_SIZE],
-    nonce: F,
+pub struct Transaction {
+    inputs: [UTXO; TX_IO_SIZE],
+    outputs: [UTXO; TX_IO_SIZE],
+    nonce: Nonce,
 }
 
 // TX_IO_SIZE * 4 + 1 for the inputs + outputs + nonce
-impl<F: PrimeField> Into<Vec<F>> for Transaction<F> {
+impl<F: PrimeField> Into<Vec<F>> for Transaction {
     fn into(self) -> Vec<F> {
-        let mut input_arr = self.inputs.concat();
-        let output_arr = self.outputs.concat();
-        input_arr.extend(output_arr);
-        input_arr.push(self.nonce);
-        input_arr
+        let mut arr = self
+            .inputs
+            .iter()
+            .chain(&self.outputs)
+            .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.id)])
+            .collect::<Vec<_>>();
+        arr.push(F::from(self.nonce));
+        arr
     }
 }
 
-impl<F: PrimeField + Absorb> Absorb for Transaction<F> {
+impl Absorb for Transaction {
     fn to_sponge_bytes(&self, dest: &mut Vec<u8>) {
-        let tx_vec = Into::<Vec<F>>::into(*self);
-        // should be ok to unwrap here since we are just serializing a bunch of field elements, not ideal though
-        tx_vec.serialize_uncompressed(dest).unwrap();
+        for utxo in self.inputs.iter().chain(&self.outputs) {
+            dest.extend(utxo.amount.to_le_bytes());
+            dest.extend(utxo.id.to_le_bytes());
+        }
+        dest.extend(self.nonce.to_le_bytes());
     }
 
-    fn to_sponge_field_elements<F_: PrimeField>(&self, dest: &mut Vec<F_>) {
+    fn to_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
         let tx_vec = Into::<Vec<F>>::into(*self);
-        tx_vec.to_sponge_field_elements(dest);
+        dest.extend(tx_vec)
     }
 }
 
@@ -48,7 +53,7 @@ pub struct TransactionTreeConfig<F: PrimeField> {
 }
 
 impl<F: PrimeField + Absorb> Config for TransactionTreeConfig<F> {
-    type Leaf = Transaction<F>;
+    type Leaf = Transaction;
     type LeafDigest = F;
     type LeafInnerDigestConverter = IdentityDigestConverter<F>;
     type InnerDigest = F;
