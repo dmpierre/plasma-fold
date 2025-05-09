@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use ark_crypto_primitives::{
     crh::poseidon::constraints::TwoToOneCRHGadget,
     merkle_tree::{constraints::ConfigGadget, IdentityDigestConverter},
@@ -59,7 +61,22 @@ impl<F: PrimeField> AllocVar<Transaction, F> for TransactionVar<F> {
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
-        todo!()
+        let cs = cs.into().cs();
+        let f = f()?;
+        let Transaction {
+            inputs,
+            outputs,
+            nonce,
+        } = f.borrow();
+        Ok(Self {
+            inputs: Vec::new_variable(cs.clone(), || Ok(&inputs[..]), mode)?
+                .try_into()
+                .unwrap(),
+            outputs: Vec::new_variable(cs.clone(), || Ok(&outputs[..]), mode)?
+                .try_into()
+                .unwrap(),
+            nonce: FpVar::new_variable(cs, || Ok(F::from(*nonce)), mode)?,
+        })
     }
 }
 
