@@ -1,9 +1,3 @@
-use ark_r1cs_std::alloc::AllocVar;
-use ark_r1cs_std::alloc::AllocationMode;
-use ark_relations::r1cs::Namespace;
-use std::borrow::Borrow;
-use std::marker::PhantomData;
-
 use ark_crypto_primitives::{
     crh::poseidon::constraints::CRHParametersVar,
     sponge::{poseidon::PoseidonConfig, Absorb},
@@ -11,10 +5,15 @@ use ark_crypto_primitives::{
 };
 use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, PrimeField};
+use ark_r1cs_std::alloc::AllocVar;
+use ark_r1cs_std::alloc::AllocationMode;
 use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar, prelude::Boolean};
+use ark_relations::r1cs::Namespace;
 use ark_relations::r1cs::SynthesisError;
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
+use std::borrow::Borrow;
+use std::marker::PhantomData;
 
 use crate::primitives::schnorr::Schnorr;
 use crate::primitives::schnorr::SchnorrGadget;
