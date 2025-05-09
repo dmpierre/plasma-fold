@@ -7,9 +7,11 @@ use ark_crypto_primitives::{
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ff::PrimeField;
+use ark_r1cs_std::fields::fp::FpVar;
 use std::iter::Map;
 
 pub type Nonce = u64;
+pub type NonceVar<F> = FpVar<F>;
 pub type NonceMap = Map<UserId, Nonce>;
 pub type NonceTree<P: Config> = MerkleTree<P>;
 

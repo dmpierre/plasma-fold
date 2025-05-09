@@ -1,4 +1,4 @@
-use super::{noncemap::Nonce, utxo::UTXO, TX_IO_SIZE};
+use super::{noncemap::Nonce, user::UserId, utxo::UTXO, TX_IO_SIZE};
 use crate::primitives::crh::TransactionCRH;
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
@@ -43,6 +43,24 @@ impl Absorb for Transaction {
     fn to_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
         let tx_vec = Into::<Vec<F>>::into(*self);
         dest.extend(tx_vec)
+    }
+}
+
+impl Transaction {
+    pub fn is_valid(&self, sender: Option<UserId>, nonce: Option<Nonce>) -> bool {
+        let sender = sender.unwrap_or(self.inputs[0].id);
+        if self.inputs.iter().any(|utxo| utxo.id != sender) {
+            return false;
+        }
+        if self.inputs.iter().map(|utxo| utxo.amount).sum::<u64>()
+            != self.outputs.iter().map(|utxo| utxo.amount).sum::<u64>()
+        {
+            return false;
+        }
+        if nonce.is_some() && nonce != Some(self.nonce) {
+            return false;
+        }
+        true
     }
 }
 

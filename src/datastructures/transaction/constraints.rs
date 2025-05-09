@@ -6,15 +6,16 @@ use ark_crypto_primitives::{
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
-    fields::fp::FpVar,
-    prelude::ToBytesGadget,
+    eq::EqGadget,
+    fields::{fp::FpVar, FieldVar},
+    prelude::{Boolean, ToBytesGadget},
     uint8::UInt8,
 };
 use ark_relations::r1cs::{Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
 
 use crate::{
-    datastructures::{utxo::constraints::UTXOVar, TX_IO_SIZE},
+    datastructures::{noncemap::NonceVar, user::UserIdVar, utxo::constraints::UTXOVar, TX_IO_SIZE},
     primitives::crh::constraints::TransactionVarCRH,
 };
 
@@ -71,4 +72,29 @@ impl<F: PrimeField + Absorb> ConfigGadget<TransactionTreeConfig<F>, F>
     type InnerDigest = FpVar<F>;
     type LeafHash = TransactionVarCRH<F>;
     type TwoToOneHash = TwoToOneCRHGadget<F>;
+}
+
+impl<F: PrimeField> TransactionVar<F> {
+    pub fn is_valid(
+        &self,
+        sender: Option<UserIdVar<F>>,
+        nonce: Option<NonceVar<F>>,
+    ) -> Result<Boolean<F>, SynthesisError> {
+        let mut result = Boolean::TRUE;
+        let sender = sender.unwrap_or(self.inputs[0].id.clone());
+        for i in &self.inputs {
+            result &= i.id.is_eq(&sender)?;
+        }
+        result &= self
+            .inputs
+            .iter()
+            .zip(&self.outputs)
+            .map(|(i, o)| &i.amount - &o.amount)
+            .sum::<FpVar<F>>()
+            .is_zero()?;
+        if let Some(nonce) = nonce {
+            result &= self.nonce.is_eq(&nonce)?;
+        }
+        Ok(result)
+    }
 }
