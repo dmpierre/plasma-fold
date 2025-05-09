@@ -1,13 +1,11 @@
-use crate::primitives::{crh::PublicKeyCRH, schnorr::Schnorr};
+use crate::primitives::crh::PublicKeyCRH;
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ec::{AffineRepr, CurveGroup};
-use ark_ff::PrimeField;
-use ark_serialize::CanonicalSerialize;
-use ark_std::rand::Rng;
+use ark_ff::{BigInteger, PrimeField};
 use std::{iter::Map, marker::PhantomData};
 
 use super::{keypair::PublicKey, user::UserId};
@@ -15,12 +13,11 @@ use super::{keypair::PublicKey, user::UserId};
 pub type PublicKeyMap<C: CurveGroup> = Map<UserId, PublicKey<C>>;
 pub type PublicKeyTree<P: Config> = MerkleTree<P>;
 
-impl<F: PrimeField + Absorb, C: CurveGroup<ScalarField = F>> Absorb for PublicKey<C>
-where
-    C::BaseField: Absorb,
-{
+impl<C: CurveGroup<BaseField: PrimeField + Absorb>> Absorb for PublicKey<C> {
     fn to_sponge_bytes(&self, dest: &mut Vec<u8>) {
-        self.serialize_uncompressed(dest).unwrap();
+        let (x, y) = self.key.into_affine().xy().unwrap();
+        dest.extend(x.into_bigint().to_bytes_le());
+        dest.extend(y.into_bigint().to_bytes_le());
     }
 
     fn to_sponge_field_elements<F_: PrimeField>(&self, dest: &mut Vec<F_>) {
