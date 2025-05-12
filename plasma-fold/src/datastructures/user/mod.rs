@@ -4,10 +4,13 @@ use ark_crypto_primitives::{
 };
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
-use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar};
+use ark_r1cs_std::fields::fp::FpVar;
 use ark_std::rand::Rng;
 
-use super::keypair::{KeyPair, Signature};
+use super::{
+    keypair::{KeyPair, Signature},
+    noncemap::Nonce,
+};
 
 pub type UserId = u32;
 pub type UserIdVar<F> = FpVar<F>;
@@ -15,6 +18,7 @@ pub type UserIdVar<F> = FpVar<F>;
 pub struct User<C: CurveGroup> {
     pub id: UserId,
     pub keypair: KeyPair<C>,
+    pub nonce: Nonce,
 }
 
 impl<
@@ -27,6 +31,7 @@ impl<
         Self {
             id,
             keypair: KeyPair::new(rng),
+            nonce: 0,
         }
     }
     pub fn sign(
