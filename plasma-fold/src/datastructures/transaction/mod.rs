@@ -1,9 +1,10 @@
 use super::{noncemap::Nonce, user::UserId, utxo::UTXO, TX_IO_SIZE};
 use crate::primitives::crh::TransactionCRH;
 use ark_crypto_primitives::{
-    crh::poseidon::TwoToOneCRH,
+    crh::{poseidon::TwoToOneCRH, CRHScheme},
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     sponge::{poseidon::PoseidonConfig, Absorb},
+    Error,
 };
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
@@ -15,6 +16,15 @@ pub struct Transaction {
     inputs: [UTXO; TX_IO_SIZE],
     outputs: [UTXO; TX_IO_SIZE],
     nonce: Nonce,
+}
+
+impl Transaction {
+    pub fn get_hash<F: PrimeField + Absorb>(
+        &self,
+        parameters: &PoseidonConfig<F>,
+    ) -> Result<F, Error> {
+        Ok(TransactionCRH::evaluate(parameters, self)?)
+    }
 }
 
 impl<F: PrimeField> Into<Vec<F>> for Transaction {
@@ -88,16 +98,29 @@ impl<F: PrimeField + Absorb> Config for TransactionTreeConfig<F> {
 pub mod tests {
 
     use super::{Transaction, TransactionTreeConfig};
-    use crate::datastructures::transaction::constraints::TransactionTreeConfigGadget;
-    use crate::datastructures::transaction::constraints::TransactionVar;
-    use crate::datastructures::transaction::TransactionTree;
+    use crate::{
+        datastructures::{
+            keypair::{PublicKeyVar, SignatureVar},
+            transaction::{
+                constraints::{TransactionTreeConfigGadget, TransactionVar},
+                TransactionTree,
+            },
+            user::User,
+        },
+        primitives::{crh::constraints::TransactionVarCRH, schnorr::SchnorrGadget},
+    };
     use ark_bn254::Fr;
     use ark_crypto_primitives::{
-        crh::poseidon::constraints::CRHParametersVar, merkle_tree::constraints::PathVar,
+        crh::{poseidon::constraints::CRHParametersVar, CRHSchemeGadget},
+        merkle_tree::constraints::PathVar,
     };
+    use ark_grumpkin::{constraints::GVar, Projective};
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
+    use ark_std::rand::thread_rng;
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
+
+    const W: usize = 32;
 
     #[test]
     pub fn test_transaction_tree() {
@@ -146,5 +169,42 @@ pub mod tests {
             .unwrap();
 
         assert!(res.value().unwrap());
+    }
+
+    #[test]
+    pub fn test_tx_signature_verification_circuit() {
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let mut rng = &mut thread_rng();
+        let pp = poseidon_canonical_config::<Fr>();
+        let pp_var = CRHParametersVar::new_constant(cs.clone(), &pp).unwrap();
+
+        // initialize user, tx, h(tx) and sign(tx)
+        let user = User::<Projective>::new(rng, 1);
+        let tx = Transaction::default();
+        let tx_hash = tx.get_hash(&pp).unwrap();
+        let tx_signature = user.sign(&pp, tx_hash, &mut rng).unwrap();
+
+        // alloc tx, h(tx), user.pubkey and sign(tx)
+        let tx_var = TransactionVar::new_witness(cs.clone(), || Ok(tx)).unwrap();
+        let tx_hash_var = TransactionVarCRH::evaluate(&pp_var, &tx_var).unwrap();
+        let pk_var =
+            PublicKeyVar::<Projective, GVar>::new_witness(cs.clone(), || Ok(user.keypair.pk))
+                .unwrap();
+        let signature_var = SignatureVar::new_witness(cs.clone(), || Ok(tx_signature)).unwrap();
+
+        // check sign(tx)
+        let res = SchnorrGadget::verify::<W, _, _>(
+            &pp_var,
+            &pk_var.key,
+            tx_hash_var,
+            (signature_var.s, signature_var.e),
+        )
+        .unwrap();
+
+        println!(
+            "Tx hash + signature n_constraints: {}",
+            cs.num_constraints()
+        );
+        assert!(cs.is_satisfied().unwrap());
     }
 }

@@ -3,10 +3,10 @@ use ark_crypto_primitives::{
     sponge::{poseidon::PoseidonConfig, Absorb},
     Error,
 };
-use ark_ec::CurveGroup;
+use ark_ec::{short_weierstrass::SWCurveConfig, CurveConfig, CurveGroup};
 use ark_ff::{BigInteger, PrimeField};
-use ark_r1cs_std::alloc::AllocVar;
-use ark_r1cs_std::alloc::AllocationMode;
+use ark_r1cs_std::{alloc::AllocVar, groups::curves::short_weierstrass::ProjectiveVar};
+use ark_r1cs_std::{alloc::AllocationMode, fields::FieldVar};
 use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar, prelude::Boolean};
 use ark_relations::r1cs::Namespace;
 use ark_relations::r1cs::SynthesisError;
@@ -41,12 +41,32 @@ impl<F: PrimeField> SecretKey<F> {
 pub struct PublicKey<C: CurveGroup> {
     pub key: C,
 }
+
 pub struct PublicKeyVar<
     C: CurveGroup<BaseField: PrimeField + Absorb>,
     CVar: CurveVar<C, C::BaseField>,
 > {
     pub key: CVar,
     pub _f: PhantomData<C>,
+}
+
+impl<C: CurveGroup<BaseField: Absorb + PrimeField>, CVar: CurveVar<C, C::BaseField>>
+    AllocVar<PublicKey<C>, C::BaseField> for PublicKeyVar<C, CVar>
+{
+    fn new_variable<T: Borrow<PublicKey<C>>>(
+        cs: impl Into<Namespace<C::BaseField>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        let cs = cs.into().cs();
+        let f = f()?;
+        let pk: &PublicKey<C> = f.borrow();
+        let pk_var = CVar::new_variable(cs.clone(), || Ok(pk.key), mode)?;
+        Ok(PublicKeyVar {
+            key: pk_var,
+            _f: PhantomData::<C>,
+        })
+    }
 }
 
 // Schnorr Signature, which is tuple (s, e)
@@ -107,6 +127,7 @@ pub struct KeyPair<C: CurveGroup> {
     pub sk: SecretKey<C::ScalarField>,
     pub pk: PublicKey<C>,
 }
+
 impl<C: CurveGroup<BaseField: PrimeField + Absorb>> KeyPair<C> {
     pub fn new(rng: &mut impl Rng) -> Self {
         let (sk, pk) = Schnorr::key_gen::<C>(rng);

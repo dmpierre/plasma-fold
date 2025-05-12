@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn test_native() {
+    fn test_schnorr_signature_native() {
         let rng = &mut thread_rng();
         let (ark, mds) = get_poseidon_parameters::<Fr>();
 
@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn test_circuit() {
+    fn test_schnorr_signature_circuit() {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
         let rng = &mut thread_rng();
@@ -285,7 +285,7 @@ mod tests {
             Vec::new_witness(cs.clone(), || Ok(&e_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
         SchnorrGadget::verify::<W, _, _>(&pp, &pk, m, (s, e)).unwrap();
 
-        println!("{}", cs.num_constraints());
+        println!("Signature n_constraints: {}", cs.num_constraints());
         assert!(cs.is_satisfied().unwrap());
     }
 }
