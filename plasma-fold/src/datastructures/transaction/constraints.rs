@@ -17,7 +17,9 @@ use ark_relations::r1cs::{Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
 
 use crate::{
-    datastructures::{noncemap::NonceVar, user::UserIdVar, utxo::constraints::UTXOVar, TX_IO_SIZE},
+    datastructures::{
+        noncemap::constraints::NonceVar, user::UserIdVar, utxo::constraints::UTXOVar, TX_IO_SIZE,
+    },
     primitives::crh::constraints::TransactionVarCRH,
 };
 

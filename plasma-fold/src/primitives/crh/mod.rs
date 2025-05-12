@@ -46,8 +46,7 @@ pub struct PublicKeyCRH<C: CurveGroup> {
     _c: PhantomData<C>,
 }
 
-impl<C: CurveGroup<BaseField: PrimeField + Absorb>> CRHScheme for PublicKeyCRH<C>
-{
+impl<C: CurveGroup<BaseField: PrimeField + Absorb>> CRHScheme for PublicKeyCRH<C> {
     type Input = PublicKey<C>;
     type Output = C::BaseField;
     type Parameters = PoseidonConfig<C::BaseField>;
@@ -74,8 +73,7 @@ pub struct NonceCRH<F: PrimeField + Absorb> {
     _f: PhantomData<F>,
 }
 
-impl<F: PrimeField + Absorb> CRHScheme for NonceCRH<F>
-{
+impl<F: PrimeField + Absorb + From<Nonce>> CRHScheme for NonceCRH<F> {
     type Input = [Nonce];
     type Output = F;
     type Parameters = PoseidonConfig<F>;
@@ -90,10 +88,7 @@ impl<F: PrimeField + Absorb> CRHScheme for NonceCRH<F>
         parameters: &Self::Parameters,
         input: T,
     ) -> Result<Self::Output, Error> {
-        let input = input.borrow();
-        let mut sponge = PoseidonSponge::new(parameters);
-        sponge.absorb(&input);
-        let res = sponge.squeeze_field_elements::<F>(1);
-        Ok(res[0])
+        let input = F::from(input.borrow()[0]);
+        Ok(CRH::evaluate(parameters, [input])?)
     }
 }
