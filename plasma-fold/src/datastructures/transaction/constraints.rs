@@ -1,8 +1,8 @@
-use std::convert::TryInto;
+use std::{convert::TryInto, marker::PhantomData};
 
 use ark_crypto_primitives::{
     crh::poseidon::constraints::TwoToOneCRHGadget,
-    merkle_tree::{constraints::ConfigGadget, IdentityDigestConverter},
+    merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter},
     sponge::{constraints::AbsorbGadget, Absorb},
 };
 use ark_ff::PrimeField;
@@ -80,8 +80,13 @@ impl<F: PrimeField> AllocVar<Transaction, F> for TransactionVar<F> {
     }
 }
 
-impl<F: PrimeField + Absorb> ConfigGadget<TransactionTreeConfig<F>, F>
-    for TransactionTreeConfig<F>
+pub struct TransactionTreeConfigGadget<P: Config, F: PrimeField> {
+    _f: PhantomData<P>,
+    _f1: PhantomData<F>,
+}
+
+impl<P: Config, F: PrimeField + Absorb> ConfigGadget<TransactionTreeConfig<F>, F>
+    for TransactionTreeConfigGadget<P, F>
 {
     type Leaf = TransactionVar<F>;
     type LeafDigest = FpVar<F>;

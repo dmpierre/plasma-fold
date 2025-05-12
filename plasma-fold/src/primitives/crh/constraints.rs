@@ -18,6 +18,12 @@ pub struct TransactionVarCRH<F: PrimeField> {
     _f: PhantomData<F>,
 }
 
+impl<F: PrimeField> TransactionVarCRH<F> {
+    pub fn new() -> Self {
+        Self { _f: PhantomData }
+    }
+}
+
 impl<F: PrimeField + Absorb> CRHSchemeGadget<TransactionCRH<F>, F> for TransactionVarCRH<F> {
     type InputVar = TransactionVar<F>;
     type OutputVar = FpVar<F>;
