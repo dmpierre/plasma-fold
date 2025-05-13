@@ -1,7 +1,9 @@
+use std::marker::PhantomData;
+
 use ark_crypto_primitives::{
     crh::poseidon::{TwoToOneCRH, CRH},
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
-    sponge::{poseidon::PoseidonConfig, Absorb},
+    sponge::Absorb,
 };
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
@@ -19,7 +21,7 @@ pub struct UTXO {
 pub type UTXOTree<P: Config> = MerkleTree<P>;
 
 pub struct UTXOTreeConfig<F: PrimeField> {
-    pub poseidon_conf: PoseidonConfig<F>,
+    _f: PhantomData<F>,
 }
 
 impl<F: PrimeField + Absorb> Config for UTXOTreeConfig<F> {

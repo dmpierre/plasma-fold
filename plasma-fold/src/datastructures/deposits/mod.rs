@@ -1,7 +1,9 @@
+use std::marker::PhantomData;
+
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
-    sponge::{poseidon::PoseidonConfig, Absorb},
+    sponge::Absorb,
 };
 use ark_ff::PrimeField;
 
@@ -12,7 +14,7 @@ use super::transaction::Transaction;
 pub type DepositTree<P: Config> = MerkleTree<P>;
 
 pub struct DepositTreeConfig<F: PrimeField> {
-    pub poseidon_conf: PoseidonConfig<F>,
+    _f: PhantomData<F>,
 }
 
 impl<F: PrimeField + Absorb> Config for DepositTreeConfig<F> {

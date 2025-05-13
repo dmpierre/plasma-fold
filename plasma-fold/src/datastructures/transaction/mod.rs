@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use super::{noncemap::Nonce, user::UserId, utxo::UTXO, TX_IO_SIZE};
 use crate::primitives::crh::TransactionCRH;
 use ark_crypto_primitives::{
@@ -82,7 +84,7 @@ impl Transaction {
 pub type TransactionTree<P: Config> = MerkleTree<P>;
 
 pub struct TransactionTreeConfig<F: PrimeField> {
-    pub poseidon_conf: PoseidonConfig<F>,
+    _f: PhantomData<F>,
 }
 
 impl<F: PrimeField + Absorb> Config for TransactionTreeConfig<F> {
@@ -126,20 +128,15 @@ pub mod tests {
     pub fn test_transaction_tree() {
         let tx_tree_height = 10;
         let n_transactions = (2 as usize).pow(tx_tree_height);
-        let tx_tree_conf = TransactionTreeConfig {
-            poseidon_conf: poseidon_canonical_config(),
-        };
+        let pp = poseidon_canonical_config();
 
         // Build tx tree
         let transactions = (0..n_transactions)
             .map(|_| Transaction::default())
             .collect::<Vec<Transaction>>();
-        let tx_tree = TransactionTree::<TransactionTreeConfig<Fr>>::new(
-            &tx_tree_conf.poseidon_conf,
-            &tx_tree_conf.poseidon_conf,
-            transactions.clone(),
-        )
-        .unwrap();
+        let tx_tree =
+            TransactionTree::<TransactionTreeConfig<Fr>>::new(&pp, &pp, transactions.clone())
+                .unwrap();
 
         let tx_path = tx_tree.generate_proof(0).unwrap();
 

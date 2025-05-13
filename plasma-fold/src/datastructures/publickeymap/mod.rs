@@ -2,7 +2,7 @@ use crate::primitives::crh::PublicKeyCRH;
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
-    sponge::{poseidon::PoseidonConfig, Absorb},
+    sponge::Absorb,
 };
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, PrimeField};
@@ -30,7 +30,6 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> Absorb for PublicKey<C> {
 }
 
 pub struct PublicKeyTreeConfig<C: CurveGroup<BaseField: PrimeField + Absorb>> {
-    pub poseidon_conf: PoseidonConfig<C::BaseField>,
     _c: PhantomData<C>,
 }
 
@@ -71,7 +70,7 @@ pub mod tests {
         let pp = poseidon_canonical_config::<Fr>();
         let cs = ConstraintSystem::<Fr>::new_ref();
         let public_keys = (0..n_users)
-            .map(|i| {
+            .map(|_| {
                 let key = Projective::rand(&mut rng);
                 PublicKey { key }
             })

@@ -1,8 +1,10 @@
+use std::marker::PhantomData;
+
 use crate::datastructures::user::UserId;
 use ark_crypto_primitives::{
     crh::poseidon::{TwoToOneCRH, CRH},
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
-    sponge::{poseidon::PoseidonConfig, Absorb},
+    sponge::Absorb,
 };
 use ark_ff::PrimeField;
 
@@ -11,7 +13,7 @@ pub type SignerList = Vec<UserId>;
 pub type SignerTree<P: Config> = MerkleTree<P>;
 
 pub struct SignerTreeConfig<F: PrimeField> {
-    pub poseidon_conf: PoseidonConfig<F>,
+    _f: PhantomData<F>,
 }
 
 impl<F: PrimeField + Absorb> Config for SignerTreeConfig<F> {

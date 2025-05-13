@@ -4,10 +4,10 @@ use super::user::UserId;
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
-    sponge::{poseidon::PoseidonConfig, Absorb},
+    sponge::Absorb,
 };
 use ark_ff::PrimeField;
-use std::iter::Map;
+use std::{iter::Map, marker::PhantomData};
 
 pub mod constraints;
 
@@ -16,7 +16,7 @@ pub type NonceMap = Map<UserId, Nonce>;
 pub type NonceTree<P: Config> = MerkleTree<P>;
 
 pub struct NonceTreeConfig<F: PrimeField> {
-    pub poseidon_conf: PoseidonConfig<F>,
+    _f: PhantomData<F>,
 }
 
 impl<F: PrimeField + Absorb> Config for NonceTreeConfig<F> {
