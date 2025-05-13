@@ -100,7 +100,7 @@ pub mod tests {
     use super::{Transaction, TransactionTreeConfig};
     use crate::{
         datastructures::{
-            keypair::{PublicKeyVar, SignatureVar},
+            keypair::constraints::{PublicKeyVar, SignatureVar},
             transaction::{
                 constraints::{TransactionTreeConfigGadget, TransactionVar},
                 TransactionTree,

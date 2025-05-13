@@ -9,8 +9,8 @@ use ark_crypto_primitives::{
     sponge::Absorb,
 };
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
-use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
+use ark_relations::r1cs::SynthesisError;
 
 use crate::primitives::crh::constraints::NonceVarCRH;
 

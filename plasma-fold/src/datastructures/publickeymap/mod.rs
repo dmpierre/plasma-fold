@@ -10,6 +10,8 @@ use std::{iter::Map, marker::PhantomData};
 
 use super::{keypair::PublicKey, user::UserId};
 
+pub mod constraints;
+
 pub type PublicKeyMap<C: CurveGroup> = Map<UserId, PublicKey<C>>;
 pub type PublicKeyTree<P: Config> = MerkleTree<P>;
 
@@ -32,8 +34,7 @@ pub struct PublicKeyTreeConfig<C: CurveGroup<BaseField: PrimeField + Absorb>> {
     _c: PhantomData<C>,
 }
 
-impl<C: CurveGroup<BaseField: PrimeField + Absorb>> Config for PublicKeyTreeConfig<C>
-{
+impl<C: CurveGroup<BaseField: PrimeField + Absorb>> Config for PublicKeyTreeConfig<C> {
     type Leaf = PublicKey<C>;
     type LeafDigest = C::BaseField;
     type LeafInnerDigestConverter = IdentityDigestConverter<C::BaseField>;

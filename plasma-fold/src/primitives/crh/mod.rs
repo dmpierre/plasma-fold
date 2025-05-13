@@ -8,7 +8,9 @@ use ark_crypto_primitives::{
     },
     Error,
 };
-use ark_ec::CurveGroup;
+use ark_ec::AdditiveGroup;
+use ark_ec::{AffineRepr, CurveGroup};
+use ark_ff::Field;
 use ark_ff::PrimeField;
 use ark_std::rand::Rng;
 use std::{borrow::Borrow, marker::PhantomData};
@@ -61,11 +63,19 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> CRHScheme for PublicKeyCRH<C
         parameters: &Self::Parameters,
         input: T,
     ) -> Result<Self::Output, Error> {
-        let input = input.borrow();
-        let mut sponge = PoseidonSponge::new(parameters);
-        sponge.absorb(&input);
-        let res = sponge.squeeze_field_elements::<C::BaseField>(1);
-        Ok(res[0])
+        let input: &PublicKey<C> = input.borrow();
+        let point = input.key.into_affine();
+        if point.is_zero() {
+            Ok(CRH::evaluate(
+                parameters,
+                // flag for point is zero is true
+                [C::BaseField::ZERO, C::BaseField::ZERO, C::BaseField::ONE],
+            )?)
+        } else {
+            let (x, y) = point.xy().unwrap();
+            // flag for point is zero is false
+            Ok(CRH::evaluate(parameters, [x, y, C::BaseField::ZERO])?)
+        }
     }
 }
 
@@ -90,5 +100,51 @@ impl<F: PrimeField + Absorb + From<Nonce>> CRHScheme for NonceCRH<F> {
     ) -> Result<Self::Output, Error> {
         let input = F::from(input.borrow()[0]);
         Ok(CRH::evaluate(parameters, [input])?)
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use ark_bn254::Fr;
+    use ark_crypto_primitives::crh::{
+        poseidon::constraints::CRHParametersVar, CRHScheme, CRHSchemeGadget,
+    };
+    use ark_ff::UniformRand;
+    use ark_grumpkin::{constraints::GVar, Projective};
+    use ark_r1cs_std::{alloc::AllocVar, R1CSVar};
+    use ark_relations::r1cs::ConstraintSystem;
+    use ark_std::rand::thread_rng;
+    use folding_schemes::transcript::poseidon::poseidon_canonical_config;
+
+    use crate::{
+        datastructures::keypair::{constraints::PublicKeyVar, PublicKey},
+        primitives::crh::{constraints::PublicKeyVarCRH, PublicKeyCRH},
+    };
+
+    #[test]
+    pub fn test_public_key_crh() {
+        let mut rng = thread_rng();
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let pp = poseidon_canonical_config();
+        let pp_var = CRHParametersVar::new_constant(cs.clone(), &pp).unwrap();
+
+        for i in 0..20 {
+            let key = if i == 0 {
+                Projective::default() // zero point
+            } else {
+                Projective::rand(&mut rng)
+            };
+            let public_key = PublicKey { key };
+            let public_key_var =
+                PublicKeyVar::<Projective, GVar>::new_witness(
+                    cs.clone(),
+                    || Ok(public_key.clone()),
+                )
+                .unwrap();
+
+            let res1 = PublicKeyCRH::evaluate(&pp, &public_key).unwrap();
+            let res2 = PublicKeyVarCRH::evaluate(&pp_var, &public_key_var).unwrap();
+            assert_eq!(res1, res2.value().unwrap());
+        }
     }
 }

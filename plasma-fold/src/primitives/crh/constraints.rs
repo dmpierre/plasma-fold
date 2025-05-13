@@ -7,14 +7,16 @@ use ark_crypto_primitives::{
     },
     sponge::{constraints::AbsorbGadget, Absorb},
 };
+use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
-use ark_r1cs_std::fields::fp::FpVar;
+use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar};
 
 use crate::datastructures::{
-    noncemap::constraints::NonceVar, transaction::constraints::TransactionVar,
+    keypair::constraints::PublicKeyVar, noncemap::constraints::NonceVar,
+    transaction::constraints::TransactionVar,
 };
 
-use super::{NonceCRH, TransactionCRH};
+use super::{NonceCRH, PublicKeyCRH, TransactionCRH};
 
 pub struct TransactionVarCRH<F: PrimeField> {
     _f: PhantomData<F>,
@@ -54,5 +56,29 @@ impl<F: PrimeField + Absorb> CRHSchemeGadget<NonceCRH<F>, F> for NonceVarCRH<F> 
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
         Ok(CRHGadget::evaluate(parameters, input)?)
+    }
+}
+
+pub struct PublicKeyVarCRH<
+    C: CurveGroup<BaseField: PrimeField + Absorb>,
+    CVar: CurveVar<C, C::BaseField>,
+> {
+    _c: PhantomData<C>,
+    _c1: PhantomData<CVar>,
+}
+
+impl<C: CurveGroup<BaseField: PrimeField + Absorb>, CVar: CurveVar<C, C::BaseField>>
+    CRHSchemeGadget<PublicKeyCRH<C>, C::BaseField> for PublicKeyVarCRH<C, CVar>
+{
+    type InputVar = PublicKeyVar<C, CVar>;
+    type OutputVar = FpVar<C::BaseField>;
+    type ParametersVar = CRHParametersVar<C::BaseField>;
+
+    fn evaluate(
+        parameters: &Self::ParametersVar,
+        input: &Self::InputVar,
+    ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
+        let key = input.key.to_constraint_field()?;
+        Ok(CRHGadget::evaluate(parameters, &key)?)
     }
 }
