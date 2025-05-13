@@ -25,3 +25,6 @@ impl<F: PrimeField + Absorb> Config for SignerTreeConfig<F> {
     type LeafHash = UserIdCRH<F>;
     type TwoToOneHash = TwoToOneCRH<F>;
 }
+
+#[cfg(test)]
+pub mod tests {}

@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use ark_crypto_primitives::{
     crh::poseidon::constraints::TwoToOneCRHGadget,
     merkle_tree::{constraints::ConfigGadget, IdentityDigestConverter},
@@ -7,6 +5,7 @@ use ark_crypto_primitives::{
 };
 use ark_ff::PrimeField;
 use ark_r1cs_std::fields::fp::FpVar;
+use std::marker::PhantomData;
 
 use crate::{datastructures::user::UserIdVar, primitives::crh::constraints::UserIdVarCRH};
 
