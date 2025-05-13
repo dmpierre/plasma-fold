@@ -6,13 +6,12 @@ use ark_crypto_primitives::{
     sponge::Absorb,
 };
 use ark_ff::PrimeField;
-use ark_serialize::CanonicalSerialize;
 
 use super::user::UserId;
 
 pub mod constraints;
 
-#[derive(Clone, Debug, Copy, Default, CanonicalSerialize)]
+#[derive(Clone, Debug, Copy, Default)]
 pub struct UTXO {
     pub amount: u64,
     pub id: UserId,

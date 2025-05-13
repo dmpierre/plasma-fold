@@ -36,8 +36,8 @@ impl<F: PrimeField + Absorb> CRHScheme for TransactionCRH<F> {
         parameters: &Self::Parameters,
         input: T,
     ) -> Result<Self::Output, Error> {
-        let mut elements = Vec::new();
-        input.borrow().to_sponge_field_elements(&mut elements);
+        let tx: &Transaction = input.borrow();
+        let elements: Vec<F> = tx.into();
         let res = CRH::evaluate(parameters, elements.as_slice())?;
         Ok(res)
     }

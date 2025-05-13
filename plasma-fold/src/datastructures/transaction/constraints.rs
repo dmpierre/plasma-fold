@@ -3,15 +3,14 @@ use std::{convert::TryInto, marker::PhantomData};
 use ark_crypto_primitives::{
     crh::poseidon::constraints::TwoToOneCRHGadget,
     merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter},
-    sponge::{constraints::AbsorbGadget, Absorb},
+    sponge::Absorb,
 };
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     eq::EqGadget,
     fields::{fp::FpVar, FieldVar},
-    prelude::{Boolean, ToBytesGadget},
-    uint8::UInt8,
+    prelude::Boolean,
 };
 use ark_relations::r1cs::{Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
@@ -25,20 +24,8 @@ use crate::{
 
 use super::{Transaction, TransactionTreeConfig};
 
-impl<F: PrimeField> AbsorbGadget<F> for TransactionVar<F> {
-    fn to_sponge_bytes(&self) -> Result<Vec<UInt8<F>>, SynthesisError> {
-        let mut arr = self
-            .inputs
-            .iter()
-            .chain(&self.outputs)
-            .map(|utxo| Ok([utxo.amount.to_bytes_le()?, utxo.id.to_bytes_le()?].concat()))
-            .collect::<Result<Vec<_>, _>>()?
-            .concat();
-        arr.extend(self.nonce.to_bytes_le()?);
-        Ok(arr)
-    }
-
-    fn to_sponge_field_elements(&self) -> Result<Vec<FpVar<F>>, SynthesisError> {
+impl<F: PrimeField> Into<Vec<FpVar<F>>> for &TransactionVar<F> {
+    fn into(self) -> Vec<FpVar<F>> {
         let mut arr = self
             .inputs
             .iter()
@@ -46,7 +33,7 @@ impl<F: PrimeField> AbsorbGadget<F> for TransactionVar<F> {
             .flat_map(|utxo| [utxo.amount.clone(), utxo.id.clone()])
             .collect::<Vec<_>>();
         arr.push(self.nonce.clone());
-        Ok(arr)
+        arr
     }
 }
 

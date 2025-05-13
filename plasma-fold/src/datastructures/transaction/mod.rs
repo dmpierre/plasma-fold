@@ -9,11 +9,10 @@ use ark_crypto_primitives::{
     Error,
 };
 use ark_ff::PrimeField;
-use ark_serialize::CanonicalSerialize;
 
 pub mod constraints;
 
-#[derive(Clone, Debug, Copy, Default, CanonicalSerialize)]
+#[derive(Clone, Debug, Copy, Default)]
 pub struct Transaction {
     inputs: [UTXO; TX_IO_SIZE],
     outputs: [UTXO; TX_IO_SIZE],
@@ -26,6 +25,19 @@ impl Transaction {
         parameters: &PoseidonConfig<F>,
     ) -> Result<F, Error> {
         Ok(TransactionCRH::evaluate(parameters, self)?)
+    }
+}
+
+impl<F: PrimeField> Into<Vec<F>> for &Transaction {
+    fn into(self) -> Vec<F> {
+        let mut arr = self
+            .inputs
+            .iter()
+            .chain(&self.outputs)
+            .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.id)])
+            .collect::<Vec<_>>();
+        arr.push(F::from(self.nonce));
+        arr
     }
 }
 
@@ -45,21 +57,6 @@ impl<F: PrimeField> Into<Vec<F>> for Transaction {
 impl AsRef<Transaction> for Transaction {
     fn as_ref(&self) -> &Transaction {
         &self
-    }
-}
-
-impl Absorb for Transaction {
-    fn to_sponge_bytes(&self, dest: &mut Vec<u8>) {
-        for utxo in self.inputs.iter().chain(&self.outputs) {
-            dest.extend(utxo.amount.to_le_bytes());
-            dest.extend(utxo.id.to_le_bytes());
-        }
-        dest.extend(self.nonce.to_le_bytes());
-    }
-
-    fn to_sponge_field_elements<F: PrimeField>(&self, dest: &mut Vec<F>) {
-        let tx_vec = Into::<Vec<F>>::into(*self);
-        dest.extend(tx_vec)
     }
 }
 

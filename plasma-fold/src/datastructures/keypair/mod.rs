@@ -5,13 +5,12 @@ use ark_crypto_primitives::{
 };
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
-use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 
 pub mod constraints;
 
 // Schnorr secret key
-#[derive(Debug, CanonicalSerialize)]
+#[derive(Debug)]
 pub struct SecretKey<F: PrimeField> {
     pub key: F,
 }
@@ -29,7 +28,7 @@ impl<F: PrimeField> SecretKey<F> {
 }
 
 // Schnorr public key
-#[derive(Debug, Clone, CanonicalSerialize)]
+#[derive(Debug, Clone)]
 pub struct PublicKey<C: CurveGroup> {
     pub key: C,
 }

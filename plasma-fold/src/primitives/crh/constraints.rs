@@ -41,7 +41,7 @@ impl<F: PrimeField + Absorb> CRHSchemeGadget<TransactionCRH<F>, F> for Transacti
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
-        let elements = input.to_sponge_field_elements()?;
+        let elements: Vec<FpVar<F>> = input.into();
         Ok(CRHGadget::evaluate(parameters, &elements)?)
     }
 }
