@@ -10,8 +10,8 @@ use ark_crypto_primitives::{
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean, R1CSVar};
-use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef, SynthesisError};
+use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
+use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use std::{iter::Map, marker::PhantomData};
 
 pub mod constraints;
@@ -33,23 +33,6 @@ impl<F: PrimeField + Absorb> Config for NonceTreeConfig<F> {
     type TwoToOneHash = TwoToOneCRH<F>;
 }
 
-pub struct NonceTreeGadgets<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> {
-    _f: PhantomData<P>,
-    _f1: PhantomData<F>,
-    _f2: PhantomData<PG>,
-}
-
-impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> NonceTreeGadgets<P, F, PG> {
-    pub fn compute_id_and_check(
-        cs: ConstraintSystemRef<F>,
-        nonce_path: &PathVar<P, F, PG>,
-        expected_id: &FpVar<F>,
-    ) -> Result<Boolean<F>, SynthesisError> {
-        let mut computed_id = Boolean::<F>::le_bits_to_fp(&nonce_path.get_leaf_position())?;
-        Ok(computed_id.is_eq(&expected_id)?)
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
     use ark_bn254::Fr;
@@ -59,9 +42,11 @@ pub mod tests {
     use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 
-    use crate::datastructures::noncemap::{NonceTree, NonceTreeConfig};
+    use crate::datastructures::noncemap::{
+        constraints::NonceTreeGadgets, NonceTree, NonceTreeConfig,
+    };
 
-    use super::{constraints::NonceTreeConfigGadget, NonceTreeGadgets};
+    use super::constraints::NonceTreeConfigGadget;
 
     #[test]
     pub fn test_nonce_map_circuit() {
@@ -90,7 +75,6 @@ pub mod tests {
             .unwrap();
 
             let res = NonceTreeGadgets::compute_id_and_check(
-                cs.clone(),
                 &user_nonce_proof_var,
                 &expected_random_user_id_var,
             )
