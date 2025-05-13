@@ -34,6 +34,12 @@ pub struct PublicKey<C: CurveGroup> {
     pub key: C,
 }
 
+impl<C: CurveGroup> AsRef<PublicKey<C>> for PublicKey<C> {
+    fn as_ref(&self) -> &PublicKey<C> {
+        &self
+    }
+}
+
 // Schnorr Signature, which is tuple (s, e)
 pub struct Signature<F: PrimeField> {
     pub s: F,
