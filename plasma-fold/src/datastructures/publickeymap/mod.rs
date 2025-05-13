@@ -42,3 +42,8 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> Config for PublicKeyTreeConf
     type LeafHash = PublicKeyCRH<C>;
     type TwoToOneHash = TwoToOneCRH<C::BaseField>;
 }
+
+#[cfg(test)]
+pub mod tests {
+    pub fn test_build_public_key_tree() {}
+}

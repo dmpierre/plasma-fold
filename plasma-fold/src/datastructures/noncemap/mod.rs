@@ -37,8 +37,9 @@ pub mod tests {
     use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 
-    use crate::datastructures::noncemap::{
-        constraints::NonceTreeGadgets, NonceTree, NonceTreeConfig,
+    use crate::{
+        circuits::gadgets::TreeGadgets,
+        datastructures::noncemap::{NonceTree, NonceTreeConfig},
     };
 
     use super::constraints::NonceTreeConfigGadget;
@@ -54,7 +55,7 @@ pub mod tests {
             .collect::<Vec<[u64; 1]>>();
         let nonce_tree = NonceTree::<NonceTreeConfig<Fr>>::new(&pp, &pp, nonces).unwrap();
 
-        for i in 0..100 {
+        for _ in 0..100 {
             let expected_random_user_id = rng.gen_range(0..n_users);
             let user_nonce_proof = nonce_tree.generate_proof(expected_random_user_id).unwrap();
             let expected_random_user_id_var =
@@ -69,11 +70,8 @@ pub mod tests {
             })
             .unwrap();
 
-            let res = NonceTreeGadgets::compute_id_and_check(
-                &user_nonce_proof_var,
-                &expected_random_user_id_var,
-            )
-            .unwrap();
+            TreeGadgets::compute_id_and_check(&user_nonce_proof_var, &expected_random_user_id_var)
+                .unwrap();
         }
 
         assert!(cs.is_satisfied().unwrap());
