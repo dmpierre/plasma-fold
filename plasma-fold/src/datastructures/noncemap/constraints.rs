@@ -43,8 +43,8 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> NonceTreeGadgets<P, F, PG
     pub fn compute_id_and_check(
         nonce_path: &PathVar<P, F, PG>,
         expected_id: &FpVar<F>,
-    ) -> Result<Boolean<F>, SynthesisError> {
+    ) -> Result<(), SynthesisError> {
         let computed_id = Boolean::<F>::le_bits_to_fp(&nonce_path.get_leaf_position())?;
-        Ok(computed_id.is_eq(&expected_id)?)
+        Ok(computed_id.enforce_equal(&expected_id)?)
     }
 }

@@ -3,16 +3,11 @@ use crate::primitives::crh::NonceCRH;
 use super::user::UserId;
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
-    merkle_tree::{
-        constraints::{ConfigGadget, PathVar},
-        Config, IdentityDigestConverter, MerkleTree,
-    },
+    merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ff::PrimeField;
-use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
-use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
-use std::{iter::Map, marker::PhantomData};
+use std::iter::Map;
 
 pub mod constraints;
 
@@ -37,7 +32,7 @@ impl<F: PrimeField + Absorb> Config for NonceTreeConfig<F> {
 pub mod tests {
     use ark_bn254::Fr;
     use ark_crypto_primitives::merkle_tree::constraints::PathVar;
-    use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
+    use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
@@ -79,8 +74,8 @@ pub mod tests {
                 &expected_random_user_id_var,
             )
             .unwrap();
-            assert!(cs.is_satisfied().unwrap());
-            assert!(res.value().unwrap());
         }
+
+        assert!(cs.is_satisfied().unwrap());
     }
 }
