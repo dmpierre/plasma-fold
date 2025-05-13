@@ -10,7 +10,7 @@ use ark_crypto_primitives::{
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean};
+use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, prelude::Boolean, R1CSVar};
 use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef, SynthesisError};
 use std::{iter::Map, marker::PhantomData};
 
@@ -45,10 +45,7 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> NonceTreeGadgets<P, F, PG
         nonce_path: &PathVar<P, F, PG>,
         expected_id: &FpVar<F>,
     ) -> Result<Boolean<F>, SynthesisError> {
-        let mut computed_id = FpVar::new_witness(cs.clone(), || Ok(F::ZERO))?;
-        for pos in nonce_path.get_leaf_position() {
-            computed_id += Into::<FpVar<F>>::into(pos)
-        }
+        let mut computed_id = Boolean::<F>::le_bits_to_fp(&nonce_path.get_leaf_position())?;
         Ok(computed_id.is_eq(&expected_id)?)
     }
 }
@@ -57,54 +54,49 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> NonceTreeGadgets<P, F, PG
 pub mod tests {
     use ark_bn254::Fr;
     use ark_crypto_primitives::merkle_tree::constraints::PathVar;
-    use ark_ff::Field;
-    use ark_grumpkin::Projective;
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
-    use ark_std::rand::thread_rng;
+    use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 
-    use crate::datastructures::{
-        noncemap::{Nonce, NonceTree, NonceTreeConfig},
-        user::User,
-    };
+    use crate::datastructures::noncemap::{NonceTree, NonceTreeConfig};
 
     use super::{constraints::NonceTreeConfigGadget, NonceTreeGadgets};
 
     #[test]
     pub fn test_nonce_map_circuit() {
+        let n_users = (2 as usize).pow(10);
         let mut rng = thread_rng();
-        let cs = ConstraintSystem::<Fr>::new_ref();
         let pp = poseidon_canonical_config::<Fr>();
-        let n_users = (2 as usize).pow(5);
-        let mut users = (0..n_users)
-            .map(|i| User::new(&mut rng, i as u32))
-            .collect::<Vec<User<Projective>>>();
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let nonces = (0..n_users)
+            .map(|i| [rng.gen_range(0..(u64::MAX)); 1])
+            .collect::<Vec<[u64; 1]>>();
+        let nonce_tree = NonceTree::<NonceTreeConfig<Fr>>::new(&pp, &pp, nonces).unwrap();
 
-        // making up a non zero nonce for user with id 1
-        users[1].nonce = 10;
-        let nonces = users
-            .iter()
-            .map(|user| [user.nonce])
-            .collect::<Vec<[Nonce; 1]>>();
-        let nonce_tree = NonceTree::<NonceTreeConfig<Fr>>::new(&pp, &pp, &nonces).unwrap();
+        for i in 0..100 {
+            let expected_random_user_id = rng.gen_range(0..n_users);
+            let user_nonce_proof = nonce_tree.generate_proof(expected_random_user_id).unwrap();
+            let expected_random_user_id_var =
+                FpVar::new_witness(cs.clone(), || Ok(Fr::from(expected_random_user_id as u32)))
+                    .unwrap();
+            let user_nonce_proof_var = PathVar::<
+                NonceTreeConfig<Fr>,
+                Fr,
+                NonceTreeConfigGadget<NonceTreeConfig<Fr>, Fr>,
+            >::new_witness(cs.clone(), || {
+                Ok(user_nonce_proof)
+            })
+            .unwrap();
 
-        let user_nonce_proof = nonce_tree.generate_proof(1).unwrap();
-
-        // allocate expected user id, user nonce proof
-        let expected = FpVar::new_witness(cs.clone(), || Ok(Fr::ONE)).unwrap();
-        let user_nonce_proof_var = PathVar::<
-            NonceTreeConfig<Fr>,
-            Fr,
-            NonceTreeConfigGadget<NonceTreeConfig<Fr>, Fr>,
-        >::new_witness(cs.clone(), || Ok(user_nonce_proof))
-        .unwrap();
-
-        // check that both nonce proof (TODO) and user id are correct
-        let res =
-            NonceTreeGadgets::compute_id_and_check(cs.clone(), &user_nonce_proof_var, &expected)
-                .unwrap();
-        assert!(cs.is_satisfied().unwrap());
-        assert!(res.value().unwrap());
+            let res = NonceTreeGadgets::compute_id_and_check(
+                cs.clone(),
+                &user_nonce_proof_var,
+                &expected_random_user_id_var,
+            )
+            .unwrap();
+            assert!(cs.is_satisfied().unwrap());
+            assert!(res.value().unwrap());
+        }
     }
 }
