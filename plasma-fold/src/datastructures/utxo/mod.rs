@@ -1,11 +1,13 @@
 use std::marker::PhantomData;
 
 use ark_crypto_primitives::{
-    crh::poseidon::{TwoToOneCRH, CRH},
+    crh::poseidon::TwoToOneCRH,
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     sponge::Absorb,
 };
 use ark_ff::PrimeField;
+
+use crate::primitives::crh::UTXOCRH;
 
 use super::user::UserId;
 
@@ -24,10 +26,10 @@ pub struct UTXOTreeConfig<F: PrimeField> {
 }
 
 impl<F: PrimeField + Absorb> Config for UTXOTreeConfig<F> {
-    type Leaf = [F];
+    type Leaf = UTXO;
     type LeafDigest = F;
     type LeafInnerDigestConverter = IdentityDigestConverter<F>;
     type InnerDigest = F;
-    type LeafHash = CRH<F>;
+    type LeafHash = UTXOCRH<F>;
     type TwoToOneHash = TwoToOneCRH<F>;
 }

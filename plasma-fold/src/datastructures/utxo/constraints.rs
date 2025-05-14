@@ -1,10 +1,20 @@
-use std::borrow::Borrow;
+use std::{borrow::Borrow, marker::PhantomData};
 
+use ark_crypto_primitives::{
+    crh::poseidon::constraints::TwoToOneCRHGadget,
+    merkle_tree::{constraints::ConfigGadget, IdentityDigestConverter},
+    sponge::Absorb,
+};
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::{AllocVar, AllocationMode}, fields::fp::FpVar};
+use ark_r1cs_std::{
+    alloc::{AllocVar, AllocationMode},
+    fields::fp::FpVar,
+};
 use ark_relations::r1cs::{Namespace, SynthesisError};
 
-use super::UTXO;
+use crate::primitives::crh::constraints::UTXOVarCRH;
+
+use super::{UTXOTreeConfig, UTXO};
 
 #[derive(Debug)]
 pub struct UTXOVar<F: PrimeField> {
@@ -26,4 +36,17 @@ impl<F: PrimeField> AllocVar<UTXO, F> for UTXOVar<F> {
             id: FpVar::new_variable(cs, || Ok(F::from(*id)), mode)?,
         })
     }
+}
+
+pub struct UTXOTreeConfigGadget<F: PrimeField> {
+    _f: PhantomData<F>,
+}
+
+impl<F: PrimeField + Absorb> ConfigGadget<UTXOTreeConfig<F>, F> for UTXOTreeConfigGadget<F> {
+    type Leaf = UTXOVar<F>;
+    type LeafDigest = FpVar<F>;
+    type LeafInnerConverter = IdentityDigestConverter<FpVar<F>>;
+    type InnerDigest = FpVar<F>;
+    type LeafHash = UTXOVarCRH<F>;
+    type TwoToOneHash = TwoToOneCRHGadget<F>;
 }

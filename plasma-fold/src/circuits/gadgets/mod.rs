@@ -23,4 +23,6 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> TreeGadgets<P, F, PG> {
         let computed_id = Boolean::<F>::le_bits_to_fp(&path.get_leaf_position())?;
         Ok(computed_id.enforce_equal(&expected_id)?)
     }
+
+    pub fn update_leaf() {}
 }
