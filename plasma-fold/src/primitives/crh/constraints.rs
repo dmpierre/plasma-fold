@@ -88,7 +88,7 @@ pub struct UserIdVarCRH<F: PrimeField> {
 }
 
 impl<F: PrimeField + Absorb> CRHSchemeGadget<UserIdCRH<F>, F> for UserIdVarCRH<F> {
-    type InputVar = UserIdVar<F>;
+    type InputVar = [UserIdVar<F>];
     type OutputVar = FpVar<F>;
     type ParametersVar = CRHParametersVar<F>;
 
@@ -96,6 +96,6 @@ impl<F: PrimeField + Absorb> CRHSchemeGadget<UserIdCRH<F>, F> for UserIdVarCRH<F
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
-        CRHGadget::evaluate(parameters, &[input.clone()])
+        CRHGadget::evaluate(parameters, input)
     }
 }

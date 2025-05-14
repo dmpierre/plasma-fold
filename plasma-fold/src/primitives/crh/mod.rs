@@ -107,7 +107,7 @@ pub struct UserIdCRH<F: PrimeField> {
 }
 
 impl<F: PrimeField + Absorb + From<UserId>> CRHScheme for UserIdCRH<F> {
-    type Input = UserId;
+    type Input = [UserId];
     type Output = F;
     type Parameters = PoseidonConfig<F>;
 
@@ -121,7 +121,7 @@ impl<F: PrimeField + Absorb + From<UserId>> CRHScheme for UserIdCRH<F> {
         parameters: &Self::Parameters,
         input: T,
     ) -> Result<Self::Output, Error> {
-        let input = F::from(*input.borrow());
+        let input = F::from(input.borrow()[0]);
         Ok(CRH::evaluate(parameters, [input])?)
     }
 }

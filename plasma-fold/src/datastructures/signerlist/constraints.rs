@@ -16,7 +16,7 @@ pub struct SignerTreeConfigGadget<F: PrimeField> {
 }
 
 impl<F: PrimeField + Absorb> ConfigGadget<SignerTreeConfig<F>, F> for SignerTreeConfigGadget<F> {
-    type Leaf = UserIdVar<F>;
+    type Leaf = [UserIdVar<F>];
     type LeafDigest = FpVar<F>;
     type LeafInnerConverter = IdentityDigestConverter<FpVar<F>>;
     type InnerDigest = FpVar<F>;
