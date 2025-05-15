@@ -12,6 +12,8 @@ use std::{
     fmt::Display,
 };
 
+pub mod constraints;
+
 #[derive(Debug)]
 pub enum SparseMTError {
     GenericError,
