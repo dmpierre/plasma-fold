@@ -40,6 +40,8 @@ impl<F: PrimeField + Absorb> Config for NonceTreeConfig<F> {
 pub mod tests {
     use ark_bn254::Fr;
     use ark_crypto_primitives::merkle_tree::constraints::PathVar;
+    use ark_ff::UniformRand;
+    use ark_grumpkin::Projective;
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::rand::{thread_rng, Rng};
@@ -47,7 +49,11 @@ pub mod tests {
 
     use crate::{
         circuits::gadgets::{TreeGadgets, TreeUpdateProof},
-        datastructures::noncemap::{Nonce, NonceTree, NonceTreeConfig},
+        datastructures::{
+            keypair::{self, KeyPair},
+            noncemap::{Nonce, NonceTree, NonceTreeConfig},
+            user::{sample_user, User},
+        },
     };
 
     use super::constraints::NonceTreeConfigGadget;
@@ -79,8 +85,11 @@ pub mod tests {
             })
             .unwrap();
 
-            TreeGadgets::compute_id_and_check(&user_nonce_proof_var, &expected_random_user_id_var)
-                .unwrap();
+            TreeGadgets::compute_id_from_path_and_check(
+                &user_nonce_proof_var,
+                &expected_random_user_id_var,
+            )
+            .unwrap();
         }
 
         assert!(cs.is_satisfied().unwrap());
@@ -93,16 +102,9 @@ pub mod tests {
         let mut rng = thread_rng();
         let pp = poseidon_canonical_config::<Fr>();
         let cs = ConstraintSystem::<Fr>::new_ref();
-        let nonces = (0..n_users)
-            .map(|i| Nonce(rng.gen_range(0..(u64::MAX))))
-            .collect::<Vec<Nonce>>();
-        let nonce_tree = NonceTree::<NonceTreeConfig<Fr>>::new(&pp, &pp, nonces).unwrap();
-
-        let new_nonces = (0..n_users)
-            .map(|i| [rng.gen_range(0..(u64::MAX)); 1])
-            .collect::<Vec<[u64; 1]>>();
-
-        let mut update_proofs =
-            Vec::<TreeUpdateProof<NonceTreeConfig<Fr>>>::with_capacity(new_nonces.len());
+        let users = (0..n_users)
+            .map(|i| sample_user(&mut rng))
+            .collect::<Vec<User<Projective>>>();
+        let initial_nonces = users.iter().map(|u| u.nonce).collect::<Vec<Nonce>>();
     }
 }

@@ -6,6 +6,7 @@ use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_std::rand::Rng;
+use ark_std::UniformRand;
 
 use super::{
     keypair::{KeyPair, Signature},
@@ -41,5 +42,14 @@ impl<
         rng: &mut impl Rng,
     ) -> Result<Signature<F>, Error> {
         Ok(self.keypair.sk.sign::<C>(pp, m, rng)?)
+    }
+}
+
+pub fn sample_user<C: CurveGroup<BaseField: PrimeField + Absorb>>(rng: &mut impl Rng) -> User<C> {
+    let keypair = KeyPair::new(rng);
+    User {
+        id: u32::rand(rng),
+        keypair,
+        nonce: Nonce(u64::rand(rng)),
     }
 }

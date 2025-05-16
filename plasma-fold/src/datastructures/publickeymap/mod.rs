@@ -80,8 +80,11 @@ pub mod tests {
                 >::new_witness(cs.clone(), || Ok(user_public_key_proof))
                 .unwrap();
 
-            TreeGadgets::compute_id_and_check(&public_key_proof_var, &expected_random_user_id_var)
-                .unwrap();
+            TreeGadgets::compute_id_from_path_and_check(
+                &public_key_proof_var,
+                &expected_random_user_id_var,
+            )
+            .unwrap();
         }
 
         assert!(cs.is_satisfied().unwrap());
