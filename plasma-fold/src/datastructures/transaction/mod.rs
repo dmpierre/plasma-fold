@@ -98,7 +98,7 @@ pub mod tests {
 
     use super::{Transaction, TransactionTreeConfig};
     use crate::{
-        circuits::gadgets::TreeUpdateProof,
+        circuits::gadgets::{TreeGadgets, TreeUpdateProof, TreeUpdateProofVar},
         datastructures::{
             keypair::constraints::{PublicKeyVar, SignatureVar},
             transaction::{
@@ -109,7 +109,10 @@ pub mod tests {
             utxo::UTXO,
             TX_IO_SIZE,
         },
-        primitives::{crh::constraints::TransactionVarCRH, schnorr::SchnorrGadget},
+        primitives::{
+            crh::{constraints::TransactionVarCRH, TransactionCRH},
+            schnorr::SchnorrGadget,
+        },
     };
     use ark_bn254::Fr;
     use ark_crypto_primitives::{
@@ -142,9 +145,7 @@ pub mod tests {
 
         // Tx inclusion circuit
         let cs = ConstraintSystem::<Fr>::new_ref();
-        let poseidon_params_var = CRHParametersVar {
-            parameters: poseidon_canonical_config(),
-        };
+        let pp_var = CRHParametersVar::new_constant(cs.clone(), &pp).unwrap();
 
         // Initialize root, leaf and path as vars
         let tx_tree_root_var = FpVar::new_witness(cs.clone(), || Ok(tx_tree.root())).unwrap();
@@ -157,12 +158,7 @@ pub mod tests {
 
         // Verify membership
         let res = tx_path_var
-            .verify_membership(
-                &poseidon_params_var,
-                &poseidon_params_var,
-                &tx_tree_root_var,
-                &tx_leaf_var,
-            )
+            .verify_membership(&pp_var, &pp_var, &tx_tree_root_var, &tx_leaf_var)
             .unwrap();
 
         assert!(res.value().unwrap());
@@ -207,12 +203,16 @@ pub mod tests {
 
     #[test]
     pub fn test_initialize_blank_tx_tree_and_update() {
-        let tx_tree_height = 12;
-        let n_transactions = (2 as usize).pow(12);
+        let tx_tree_height = 4 as usize;
+        let n_transactions = 1 << tx_tree_height - 1;
         let pp = poseidon_canonical_config();
+        let empty_leaves = (0..n_transactions)
+            .map(|_| Transaction::default())
+            .collect::<Vec<Transaction>>();
 
-        let tx_tree =
-            TransactionTree::<TransactionTreeConfig<Fr>>::blank(&pp, &pp, tx_tree_height).unwrap();
+        // can not use blank, at least for now, since it requires LeafDigest::default();
+        let mut tx_tree =
+            TransactionTree::<TransactionTreeConfig<Fr>>::new(&pp, &pp, &empty_leaves).unwrap();
 
         // initialize transactions received by the aggregator
         let transactions = (0..n_transactions)
@@ -228,41 +228,41 @@ pub mod tests {
             Vec::<TreeUpdateProof<TransactionTreeConfig<Fr>>>::with_capacity(transactions.len());
         for (idx, tx) in transactions.iter().enumerate() {
             let prev_root = tx_tree.root();
-            let prev_leaf = Transaction::default();
             let path = tx_tree.generate_proof(idx).unwrap();
-            let new_leaf = tx.clone();
-            tx_tree.update(idx, &tx).unwrap();
+            let prev_leaf = Transaction::default();
+            tx_tree.update(idx, tx).unwrap();
             let new_root = tx_tree.root();
-            let update_proof: TreeUpdateProof<TransactionTreeConfig<Fr>> =
-                (prev_root, prev_leaf, path, new_root, new_leaf).into();
+            let update_proof = TreeUpdateProof {
+                prev_root,
+                prev_leaf,
+                path,
+                new_root,
+                new_leaf: *tx,
+            };
+            tx_tree
+                .check_update::<Transaction>(idx, &update_proof.new_leaf, &update_proof.new_root)
+                .unwrap();
             update_proofs.push(update_proof);
         }
 
         // tx tree update circuit
         let cs = ConstraintSystem::<Fr>::new_ref();
-        let poseidon_params_var = CRHParametersVar {
-            parameters: poseidon_canonical_config(),
-        };
-
-        // Initialize root, leaf and path as vars
-        let tx_tree_root_var = FpVar::new_witness(cs.clone(), || Ok(tx_tree.root())).unwrap();
-        let tx_leaf_var = TransactionVar::new_witness(cs.clone(), || Ok(transactions[0])).unwrap();
-        let tx_path_var: PathVar<
-            TransactionTreeConfig<Fr>,
-            Fr,
-            TransactionTreeConfigGadget<TransactionTreeConfig<Fr>, Fr>,
-        > = PathVar::new_witness(cs.clone(), || Ok(tx_path)).unwrap();
-
-        // Verify membership
-        let res = tx_path_var
-            .verify_membership(
-                &poseidon_params_var,
-                &poseidon_params_var,
-                &tx_tree_root_var,
-                &tx_leaf_var,
-            )
+        let pp_var = CRHParametersVar::new_constant(cs.clone(), &pp).unwrap();
+        let n_update_proofs = update_proofs.len();
+        for tx_update in update_proofs {
+            let update_var = TreeUpdateProofVar::<
+                _,
+                _,
+                TransactionTreeConfigGadget<TransactionTreeConfig<Fr>, Fr>,
+            >::new_witness(cs.clone(), || Ok(tx_update))
             .unwrap();
+            let _ = TreeGadgets::update_and_check(&pp_var, &pp_var, update_var).unwrap();
+        }
 
-        assert!(res.value().unwrap());
+        assert!(cs.is_satisfied().unwrap());
+        println!(
+            "n update_proofs: {n_update_proofs}, avg constraints per update proof: {}",
+            cs.num_constraints() / n_update_proofs
+        );
     }
 }

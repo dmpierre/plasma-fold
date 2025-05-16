@@ -8,7 +8,9 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_r1cs_std::prelude::Boolean;
 use ark_relations::r1cs::SynthesisError;
+use std::borrow::Borrow;
 use std::marker::PhantomData;
+use std::path::PathBuf;
 
 use ark_crypto_primitives::merkle_tree::Config;
 use ark_ff::PrimeField;
@@ -49,15 +51,34 @@ pub struct TreeUpdateProofVar<P: Config, F: PrimeField, PG: ConfigGadget<P, F, L
     pub new_leaf: PG::Leaf,
 }
 
-impl<P: Config<Leaf: Sized>, F: PrimeField, PG: ConfigGadget<P, F, Leaf: Sized>>
-    AllocVar<TreeUpdateProof<P>, F> for TreeUpdateProofVar<P, F, PG>
+impl<
+        P: Config<Leaf: Sized + Clone>,
+        F: PrimeField,
+        PG: ConfigGadget<P, F, Leaf: AllocVar<P::Leaf, F>>,
+    > AllocVar<TreeUpdateProof<P>, F> for TreeUpdateProofVar<P, F, PG>
 {
     fn new_variable<T: std::borrow::Borrow<TreeUpdateProof<P>>>(
         cs: impl Into<ark_relations::r1cs::Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
     ) -> Result<Self, SynthesisError> {
-        todo!()
+        let proof = f()?;
+        let proof: &TreeUpdateProof<P> = proof.borrow();
+        let cs = cs.into().cs();
+        let prev_root =
+            PG::InnerDigest::new_variable(cs.clone(), || Ok(proof.prev_root.clone()), mode)?;
+        let new_root =
+            PG::InnerDigest::new_variable(cs.clone(), || Ok(proof.new_root.clone()), mode)?;
+        let prev_leaf = PG::Leaf::new_variable(cs.clone(), || Ok(proof.prev_leaf.clone()), mode)?;
+        let new_leaf = PG::Leaf::new_variable(cs.clone(), || Ok(proof.new_leaf.clone()), mode)?;
+        let path = PathVar::<P, F, PG>::new_variable(cs.clone(), || Ok(proof.path.clone()), mode)?;
+        Ok(TreeUpdateProofVar {
+            prev_root,
+            prev_leaf,
+            path,
+            new_root,
+            new_leaf,
+        })
     }
 }
 
@@ -71,7 +92,6 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> TreeGadgets<P, F, PG> {
     }
 
     pub fn update_and_check(
-        path: &PathVar<P, F, PG>,
         leaf_params: &<<PG as ConfigGadget<P, F>>::LeafHash as CRHSchemeGadget<
             <P as Config>::LeafHash,
             F,
@@ -80,18 +100,18 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> TreeGadgets<P, F, PG> {
             <P as Config>::TwoToOneHash,
             F,
         >>::ParametersVar,
-        old_root: &PG::InnerDigest,
-        new_root: &PG::InnerDigest,
-        old_leaf: &PG::Leaf,
-        new_leaf: &PG::Leaf,
-    ) -> Result<Boolean<F>, SynthesisError> {
-        Ok(path.update_and_check(
+        update_proof: TreeUpdateProofVar<P, F, PG>,
+    ) -> Result<Boolean<F>, SynthesisError>
+    where
+        <PG as ConfigGadget<P, F>>::Leaf: Sized,
+    {
+        Ok(update_proof.path.update_and_check(
             leaf_params,
             two_to_one_params,
-            old_root,
-            new_root,
-            old_leaf,
-            new_leaf,
+            &update_proof.prev_root,
+            &update_proof.new_root,
+            &update_proof.prev_leaf,
+            &update_proof.new_leaf,
         )?)
     }
 }
