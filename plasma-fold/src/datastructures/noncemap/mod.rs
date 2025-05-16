@@ -11,7 +11,6 @@ use std::{iter::Map, marker::PhantomData};
 
 pub mod constraints;
 
-pub type Nonce = u64;
 pub type NonceMap = Map<UserId, Nonce>;
 pub type NonceTree<P: Config> = MerkleTree<P>;
 
@@ -19,8 +18,17 @@ pub struct NonceTreeConfig<F: PrimeField> {
     _f: PhantomData<F>,
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub struct Nonce(pub u64);
+
+impl AsRef<Nonce> for Nonce {
+    fn as_ref(&self) -> &Nonce {
+        &self
+    }
+}
+
 impl<F: PrimeField + Absorb> Config for NonceTreeConfig<F> {
-    type Leaf = [Nonce];
+    type Leaf = Nonce;
     type LeafDigest = F;
     type LeafInnerDigestConverter = IdentityDigestConverter<F>;
     type InnerDigest = F;
@@ -38,21 +46,22 @@ pub mod tests {
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 
     use crate::{
-        circuits::gadgets::TreeGadgets,
-        datastructures::noncemap::{NonceTree, NonceTreeConfig},
+        circuits::gadgets::{TreeGadgets, TreeUpdateProof},
+        datastructures::noncemap::{Nonce, NonceTree, NonceTreeConfig},
     };
 
     use super::constraints::NonceTreeConfigGadget;
 
     #[test]
     pub fn test_nonce_map_circuit() {
-        let n_users = (2 as usize).pow(10);
+        let tree_height = 5;
+        let n_users = 1 << (tree_height - 1);
         let mut rng = thread_rng();
         let pp = poseidon_canonical_config::<Fr>();
         let cs = ConstraintSystem::<Fr>::new_ref();
         let nonces = (0..n_users)
-            .map(|i| [rng.gen_range(0..(u64::MAX)); 1])
-            .collect::<Vec<[u64; 1]>>();
+            .map(|i| Nonce(rng.gen_range(0..(u64::MAX))))
+            .collect::<Vec<Nonce>>();
         let nonce_tree = NonceTree::<NonceTreeConfig<Fr>>::new(&pp, &pp, nonces).unwrap();
 
         for _ in 0..100 {
@@ -75,5 +84,25 @@ pub mod tests {
         }
 
         assert!(cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    pub fn test_initialize_nonce_tree_and_update() {
+        let tree_height = 5;
+        let n_users = 1 << (tree_height - 1);
+        let mut rng = thread_rng();
+        let pp = poseidon_canonical_config::<Fr>();
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let nonces = (0..n_users)
+            .map(|i| Nonce(rng.gen_range(0..(u64::MAX))))
+            .collect::<Vec<Nonce>>();
+        let nonce_tree = NonceTree::<NonceTreeConfig<Fr>>::new(&pp, &pp, nonces).unwrap();
+
+        let new_nonces = (0..n_users)
+            .map(|i| [rng.gen_range(0..(u64::MAX)); 1])
+            .collect::<Vec<[u64; 1]>>();
+
+        let mut update_proofs =
+            Vec::<TreeUpdateProof<NonceTreeConfig<Fr>>>::with_capacity(new_nonces.len());
     }
 }

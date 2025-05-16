@@ -36,7 +36,7 @@ impl<F: PrimeField> Into<Vec<F>> for &Transaction {
             .chain(&self.outputs)
             .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.id)])
             .collect::<Vec<_>>();
-        arr.push(F::from(self.nonce));
+        arr.push(F::from(self.nonce.0));
         arr
     }
 }
@@ -49,7 +49,7 @@ impl<F: PrimeField> Into<Vec<F>> for Transaction {
             .chain(&self.outputs)
             .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.id)])
             .collect::<Vec<_>>();
-        arr.push(F::from(self.nonce));
+        arr.push(F::from(self.nonce.0));
         arr
     }
 }
@@ -101,6 +101,7 @@ pub mod tests {
         circuits::gadgets::{TreeGadgets, TreeUpdateProof, TreeUpdateProofVar},
         datastructures::{
             keypair::constraints::{PublicKeyVar, SignatureVar},
+            noncemap::Nonce,
             transaction::{
                 constraints::{TransactionTreeConfigGadget, TransactionVar},
                 TransactionTree,
@@ -109,10 +110,7 @@ pub mod tests {
             utxo::UTXO,
             TX_IO_SIZE,
         },
-        primitives::{
-            crh::{constraints::TransactionVarCRH, TransactionCRH},
-            schnorr::SchnorrGadget,
-        },
+        primitives::{crh::constraints::TransactionVarCRH, schnorr::SchnorrGadget},
     };
     use ark_bn254::Fr;
     use ark_crypto_primitives::{
@@ -219,7 +217,7 @@ pub mod tests {
             .map(|i| Transaction {
                 inputs: [UTXO::default(); TX_IO_SIZE],
                 outputs: [UTXO::default(); TX_IO_SIZE],
-                nonce: i as u64,
+                nonce: Nonce(i),
             })
             .collect::<Vec<Transaction>>();
 

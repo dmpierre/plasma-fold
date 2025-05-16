@@ -21,7 +21,7 @@ pub struct NonceTreeConfigGadget<P: Config, F: PrimeField> {
 impl<P: Config, F: PrimeField + Absorb> ConfigGadget<NonceTreeConfig<F>, F>
     for NonceTreeConfigGadget<P, F>
 {
-    type Leaf = [NonceVar<F>];
+    type Leaf = NonceVar<F>;
     type LeafDigest = FpVar<F>;
     type LeafInnerConverter = IdentityDigestConverter<FpVar<F>>;
     type InnerDigest = FpVar<F>;

@@ -47,7 +47,7 @@ impl<F: PrimeField + Absorb> CRHSchemeGadget<TransactionCRH<F>, F> for Transacti
 }
 
 impl<F: PrimeField + Absorb> CRHSchemeGadget<NonceCRH<F>, F> for NonceVarCRH<F> {
-    type InputVar = [NonceVar<F>];
+    type InputVar = NonceVar<F>;
     type OutputVar = FpVar<F>;
     type ParametersVar = CRHParametersVar<F>;
 
@@ -55,7 +55,7 @@ impl<F: PrimeField + Absorb> CRHSchemeGadget<NonceCRH<F>, F> for NonceVarCRH<F> 
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
-        Ok(CRHGadget::evaluate(parameters, input)?)
+        Ok(CRHGadget::evaluate(parameters, [input.clone()].as_slice())?)
     }
 }
 

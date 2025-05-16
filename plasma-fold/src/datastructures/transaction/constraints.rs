@@ -64,7 +64,7 @@ impl<F: PrimeField> AllocVar<Transaction, F> for TransactionVar<F> {
             outputs: Vec::new_variable(cs.clone(), || Ok(&outputs[..]), mode)?
                 .try_into()
                 .unwrap(),
-            nonce: FpVar::new_variable(cs, || Ok(F::from(*nonce)), mode)?,
+            nonce: FpVar::new_variable(cs, || Ok(F::from(nonce.0)), mode)?,
         })
     }
 }

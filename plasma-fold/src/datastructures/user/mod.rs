@@ -31,7 +31,7 @@ impl<
         Self {
             id,
             keypair: KeyPair::new(rng),
-            nonce: 0,
+            nonce: Nonce(0),
         }
     }
     pub fn sign(

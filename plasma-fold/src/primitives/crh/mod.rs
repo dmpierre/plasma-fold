@@ -82,8 +82,8 @@ pub struct NonceCRH<F: PrimeField + Absorb> {
     _f: PhantomData<F>,
 }
 
-impl<F: PrimeField + Absorb + From<Nonce>> CRHScheme for NonceCRH<F> {
-    type Input = [Nonce];
+impl<F: PrimeField + Absorb> CRHScheme for NonceCRH<F> {
+    type Input = Nonce;
     type Output = F;
     type Parameters = PoseidonConfig<F>;
 
@@ -97,7 +97,8 @@ impl<F: PrimeField + Absorb + From<Nonce>> CRHScheme for NonceCRH<F> {
         parameters: &Self::Parameters,
         input: T,
     ) -> Result<Self::Output, Error> {
-        let input = F::from(input.borrow()[0]);
+        let nonce: &Nonce = input.borrow();
+        let input = F::from(nonce.0);
         Ok(CRH::evaluate(parameters, [input])?)
     }
 }
