@@ -94,8 +94,6 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> TreeGadgets<P, F, PG> {
         Ok(computed_id.enforce_equal(&expected_id)?)
     }
 
-    pub fn compute_path_from_id(id: UserIdVar<F>) -> Result<PathVar<P, F, PG>, SynthesisError> {}
-
     pub fn update_and_check(
         leaf_params: &<<PG as ConfigGadget<P, F>>::LeafHash as CRHSchemeGadget<
             <P as Config>::LeafHash,
