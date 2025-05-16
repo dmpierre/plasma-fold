@@ -6,7 +6,9 @@ use ark_ff::{BigInteger, PrimeField};
 
 pub mod constraints;
 
-// to avoid overflowing the field, we split our accumulator into two field elements
+// to avoid overflowing, we drop the last byte of our computed accumulator value
+// this is not ideal, but this is equiv 194 bits of security, which is acceptable for our prototype
+// implementation or at least until we don't find something better
 pub struct Sha256Accumulator<F: PrimeField>(pub F);
 
 impl<F: PrimeField + BigInteger> Sha256Accumulator<F> {
