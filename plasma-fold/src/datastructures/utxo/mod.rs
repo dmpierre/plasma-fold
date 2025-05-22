@@ -17,6 +17,7 @@ pub mod constraints;
 pub struct UTXO {
     pub amount: u64,
     pub id: UserId,
+    pub is_dummy: bool,
 }
 
 pub type UTXOTree<P: Config> = MerkleTree<P>;

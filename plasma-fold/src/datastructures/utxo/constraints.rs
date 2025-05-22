@@ -9,6 +9,7 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     fields::fp::FpVar,
+    prelude::Boolean,
 };
 use ark_relations::r1cs::{Namespace, SynthesisError};
 
@@ -20,6 +21,7 @@ use super::{UTXOTreeConfig, UTXO};
 pub struct UTXOVar<F: PrimeField> {
     pub amount: FpVar<F>,
     pub id: FpVar<F>,
+    pub is_dummy: Boolean<F>,
 }
 
 impl<F: PrimeField> AllocVar<UTXO, F> for UTXOVar<F> {
@@ -30,10 +32,11 @@ impl<F: PrimeField> AllocVar<UTXO, F> for UTXOVar<F> {
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
         let f = f()?;
-        let UTXO { amount, id } = f.borrow();
+        let UTXO { amount, id, is_dummy } = f.borrow();
         Ok(Self {
             amount: FpVar::new_variable(cs.clone(), || Ok(F::from(*amount)), mode)?,
-            id: FpVar::new_variable(cs, || Ok(F::from(*id)), mode)?,
+            id: FpVar::new_variable(cs.clone(), || Ok(F::from(*id)), mode)?,
+            is_dummy: Boolean::new_variable(cs, || Ok(is_dummy), mode)?,
         })
     }
 }

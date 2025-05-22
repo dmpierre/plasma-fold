@@ -13,6 +13,8 @@ use super::{
     noncemap::Nonce,
 };
 
+pub const ROLLUP_CONTRACT_ID: u32 = 0;
+
 pub type UserId = u32;
 pub type UserIdVar<F> = FpVar<F>;
 

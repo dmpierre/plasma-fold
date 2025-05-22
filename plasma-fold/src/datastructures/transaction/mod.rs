@@ -14,9 +14,9 @@ pub mod constraints;
 
 #[derive(Clone, Debug, Copy, Default)]
 pub struct Transaction {
-    inputs: [UTXO; TX_IO_SIZE],
-    outputs: [UTXO; TX_IO_SIZE],
-    nonce: Nonce,
+    pub inputs: [UTXO; TX_IO_SIZE],
+    pub outputs: [UTXO; TX_IO_SIZE],
+    pub nonce: Nonce,
 }
 
 impl Transaction {
@@ -63,11 +63,26 @@ impl AsRef<Transaction> for Transaction {
 impl Transaction {
     pub fn is_valid(&self, sender: Option<UserId>, nonce: Option<Nonce>) -> bool {
         let sender = sender.unwrap_or(self.inputs[0].id);
-        if self.inputs.iter().any(|utxo| utxo.id != sender) {
+        if self
+            .inputs
+            .iter()
+            .filter(|utxo| !utxo.is_dummy)
+            .any(|utxo| utxo.id != sender)
+        {
             return false;
         }
-        if self.inputs.iter().map(|utxo| utxo.amount).sum::<u64>()
-            != self.outputs.iter().map(|utxo| utxo.amount).sum::<u64>()
+        if self
+            .inputs
+            .iter()
+            .filter(|utxo| !utxo.is_dummy)
+            .map(|utxo| utxo.amount)
+            .sum::<u64>()
+            != self
+                .outputs
+                .iter()
+                .filter(|utxo| !utxo.is_dummy)
+                .map(|utxo| utxo.amount)
+                .sum::<u64>()
         {
             return false;
         }
