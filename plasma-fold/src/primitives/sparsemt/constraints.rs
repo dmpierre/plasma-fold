@@ -673,22 +673,22 @@ mod test {
     #[test]
     fn good_root_update_test() {
         let mut old_leaves = BTreeMap::new();
-        for i in 1..4u8 {
+        for i in 1..4u64 {
             old_leaves.insert(
-                i as u64,
+                i,
                 UTXO {
-                    amount: (10 * i) as u64,
+                    amount: 10 * i,
                     id: i as u32,
                 },
             );
         }
 
         let mut new_leaves = BTreeMap::new();
-        for i in 1..4u8 {
+        for i in 1..4u64 {
             new_leaves.insert(
                 i as u64,
                 UTXO {
-                    amount: (100 * i) as u64,
+                    amount: 100 * i,
                     id: i as u32,
                 },
             );
