@@ -7,7 +7,7 @@ use super::{user::UserId, utxo::UTXO};
 pub struct Block<F: PrimeField> {
     pub utxo_tree_root: F,
     pub tx_tree_root: F,
-    pub signers: Vec<UserId>,
+    pub signers: Vec<Option<UserId>>,
     pub deposits: Vec<UTXO>,
     pub withdrawals: Vec<UTXO>,
 }

@@ -29,7 +29,7 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> UserState<C> {
         for utxo in tx.inputs.iter().filter(|utxo| !utxo.is_dummy) {
             self.balance -= utxo.amount;
         }
-        self.nonce = Nonce(self.nonce.0 + 1);
+        self.nonce.0 += 1;
     }
 
     pub fn receive_transaction(&mut self, tx: Transaction) {

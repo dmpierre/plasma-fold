@@ -15,7 +15,7 @@ use ark_ff::PrimeField;
 
 pub mod constraints;
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub struct Transaction {
     pub inputs: [UTXO; TX_IO_SIZE],
     pub outputs: [UTXO; TX_IO_SIZE],

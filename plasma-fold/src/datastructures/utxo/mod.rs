@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{fmt::{Debug, Display}, marker::PhantomData};
 
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
@@ -13,11 +13,21 @@ use super::user::UserId;
 
 pub mod constraints;
 
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UTXO {
     pub amount: u64,
     pub id: UserId,
     pub is_dummy: bool,
+}
+
+impl Debug for UTXO {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_dummy {
+            write!(f, "UTXO(dummy)")
+        } else {
+            write!(f, "UTXO({}, {})", self.id, self.amount)
+        }
+    }
 }
 
 impl UTXO {

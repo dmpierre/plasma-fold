@@ -16,6 +16,12 @@ pub struct SecretKey<F: PrimeField> {
 }
 
 impl<F: PrimeField> SecretKey<F> {
+    pub fn new(rng: &mut impl Rng) -> Self {
+        Self {
+            key: F::rand(rng),
+        }
+    }
+
     pub fn sign<C: CurveGroup<ScalarField = F, BaseField: PrimeField + Absorb>>(
         &self,
         pp: &PoseidonConfig<C::BaseField>,
@@ -39,7 +45,16 @@ impl<C: CurveGroup> AsRef<PublicKey<C>> for PublicKey<C> {
     }
 }
 
+impl<C: CurveGroup> PublicKey<C> {
+    pub fn new(sk: &SecretKey<C::ScalarField>) -> Self {
+        Self {
+            key: C::generator().mul(sk.key),
+        }
+    }
+}
+
 // Schnorr Signature, which is tuple (s, e)
+#[derive(Debug, Clone, Default)]
 pub struct Signature<F: PrimeField> {
     pub s: F,
     pub e: F,

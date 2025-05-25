@@ -61,7 +61,7 @@ impl Schnorr {
         let (x, y) = (C::generator().mul(s) + pk.mul(e))
             .into_affine()
             .xy()
-            .unwrap();
+            .unwrap_or_default();
 
         let h = CRH::evaluate(pp, [x, y, message])?;
         let mut h_bits = h.into_bigint().to_bits_le();

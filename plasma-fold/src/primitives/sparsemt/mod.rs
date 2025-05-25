@@ -321,13 +321,12 @@ impl<
     pub fn blank(
         leaf_hash_params: &<P::LeafHash as CRHScheme>::Parameters,
         two_to_one_hash_params: &<P::TwoToOneHash as TwoToOneCRHScheme>::Parameters,
-        height: u64,
     ) -> Self {
         let empty_hashes = gen_empty_hashes::<F, P>(
             leaf_hash_params,
             two_to_one_hash_params,
             &P::Leaf::default(),
-            height,
+            P::HEIGHT,
         )
         .unwrap();
 
@@ -335,7 +334,7 @@ impl<
             tree: BTreeMap::new(),
             leaf_hash_params: leaf_hash_params.clone(),
             two_to_one_hash_params: two_to_one_hash_params.clone(),
-            root: Some(empty_hashes[(height - 1) as usize].clone()),
+            root: Some(empty_hashes[(P::HEIGHT - 1) as usize].clone()),
             empty_hashes,
         }
     }
