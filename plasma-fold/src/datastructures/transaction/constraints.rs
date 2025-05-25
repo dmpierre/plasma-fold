@@ -19,7 +19,7 @@ use crate::{
     datastructures::{
         noncemap::constraints::NonceVar, user::UserIdVar, utxo::constraints::UTXOVar, TX_IO_SIZE,
     },
-    primitives::crh::constraints::TransactionVarCRH,
+    primitives::{crh::constraints::TransactionVarCRH, sparsemt::constraints::SparseConfigGadget},
 };
 
 use super::{Transaction, TransactionTreeConfig};
@@ -69,13 +69,12 @@ impl<F: PrimeField> AllocVar<Transaction, F> for TransactionVar<F> {
     }
 }
 
-pub struct TransactionTreeConfigGadget<P: Config, F: PrimeField> {
-    _f: PhantomData<P>,
-    _f1: PhantomData<F>,
+pub struct TransactionTreeConfigGadget<F: PrimeField> {
+    _f: PhantomData<F>,
 }
 
-impl<P: Config, F: PrimeField + Absorb> ConfigGadget<TransactionTreeConfig<F>, F>
-    for TransactionTreeConfigGadget<P, F>
+impl<F: PrimeField + Absorb> ConfigGadget<TransactionTreeConfig<F>, F>
+    for TransactionTreeConfigGadget<F>
 {
     type Leaf = TransactionVar<F>;
     type LeafDigest = FpVar<F>;
@@ -83,6 +82,12 @@ impl<P: Config, F: PrimeField + Absorb> ConfigGadget<TransactionTreeConfig<F>, F
     type InnerDigest = FpVar<F>;
     type LeafHash = TransactionVarCRH<F>;
     type TwoToOneHash = TwoToOneCRHGadget<F>;
+}
+
+impl<F: PrimeField + Absorb> SparseConfigGadget<TransactionTreeConfig<F>, F>
+    for TransactionTreeConfigGadget<F>
+{
+    const HEIGHT: u64 = 32;
 }
 
 impl<F: PrimeField> TransactionVar<F> {

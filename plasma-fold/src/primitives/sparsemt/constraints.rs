@@ -40,7 +40,7 @@ pub struct MerkleSparseTreeTwoPathsVar<MP: Config, F: PrimeField, P: SparseConfi
 }
 
 impl<
-        MP: Config<LeafHash = UTXOCRH<F>, TwoToOneHash = TwoToOneCRH<F>>,
+        MP: Config<TwoToOneHash = TwoToOneCRH<F>>,
         F: PrimeField + Absorb,
         P: SparseConfigGadget<
             MP,
@@ -477,10 +477,6 @@ mod test {
 
     use super::*;
 
-    impl SparseConfigGadget<UTXOTreeConfig<Fr>, Fr> for UTXOTreeConfigGadget<Fr> {
-        const HEIGHT: u64 = 32;
-    }
-
     type UTXOMerkleTree = MerkleSparseTree<UTXOTreeConfig<Fr>>;
     type H = UTXOCRH<Fr>;
     type HG = UTXOVarCRH<Fr>;
@@ -552,13 +548,7 @@ mod test {
     fn good_root_membership_test() {
         let mut leaves = BTreeMap::new();
         for i in 1..10u8 {
-            leaves.insert(
-                i as u64,
-                UTXO {
-                    amount: (10 * i) as u64,
-                    id: i as u32,
-                },
-            );
+            leaves.insert(i as u64, UTXO::new(i.into(), i as u64 * 10));
         }
         let n_constraints = generate_merkle_tree(&leaves, false);
         println!("good_root_membership_test n constraints: {}", n_constraints);
@@ -571,10 +561,7 @@ mod test {
         for i in 1..10u8 {
             leaves.insert(
                 i as u64,
-                UTXO {
-                    amount: (10 * i) as u64,
-                    id: i as u32,
-                },
+                UTXO::new(i.into(), i as u64 * 10),
             );
         }
         generate_merkle_tree(&leaves, true);
@@ -676,10 +663,7 @@ mod test {
         for i in 1..4u64 {
             old_leaves.insert(
                 i,
-                UTXO {
-                    amount: 10 * i,
-                    id: i as u32,
-                },
+                UTXO::new(i as u32, i * 10),
             );
         }
 
@@ -687,10 +671,7 @@ mod test {
         for i in 1..4u64 {
             new_leaves.insert(
                 i as u64,
-                UTXO {
-                    amount: 100 * i,
-                    id: i as u32,
-                },
+                UTXO::new(i as u32, i * 100),
             );
         }
         let n_constraints = generate_merkle_tree_and_test_update(&old_leaves, &new_leaves);

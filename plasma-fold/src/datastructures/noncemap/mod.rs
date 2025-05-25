@@ -1,4 +1,7 @@
-use crate::primitives::crh::NonceCRH;
+use crate::primitives::{
+    crh::NonceCRH,
+    sparsemt::{MerkleSparseTree, SparseConfig},
+};
 
 use super::user::UserId;
 use ark_crypto_primitives::{
@@ -12,7 +15,7 @@ use std::{iter::Map, marker::PhantomData};
 pub mod constraints;
 
 pub type NonceMap = Map<UserId, Nonce>;
-pub type NonceTree<P: Config> = MerkleTree<P>;
+pub type NonceTree<P> = MerkleSparseTree<P>;
 
 pub struct NonceTreeConfig<F: PrimeField> {
     _f: PhantomData<F>,
@@ -36,10 +39,18 @@ impl<F: PrimeField + Absorb> Config for NonceTreeConfig<F> {
     type TwoToOneHash = TwoToOneCRH<F>;
 }
 
+impl<F: PrimeField + Absorb> SparseConfig for NonceTreeConfig<F> {
+    const HEIGHT: u64 = 32;
+}
+
 #[cfg(test)]
 pub mod tests {
+    use std::collections::BTreeMap;
+
     use ark_bn254::Fr;
-    use ark_crypto_primitives::merkle_tree::constraints::PathVar;
+    use ark_crypto_primitives::{
+        crh::poseidon::constraints::CRHParametersVar, merkle_tree::constraints::PathVar,
+    };
     use ark_ff::UniformRand;
     use ark_grumpkin::Projective;
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
@@ -54,6 +65,7 @@ pub mod tests {
             noncemap::{Nonce, NonceTree, NonceTreeConfig},
             user::{sample_user, User},
         },
+        primitives::sparsemt::constraints::MerkleSparseTreePathVar,
     };
 
     use super::constraints::NonceTreeConfigGadget;
@@ -68,28 +80,48 @@ pub mod tests {
         let nonces = (0..n_users)
             .map(|i| Nonce(rng.gen_range(0..(u64::MAX))))
             .collect::<Vec<Nonce>>();
-        let nonce_tree = NonceTree::<NonceTreeConfig<Fr>>::new(&pp, &pp, nonces).unwrap();
+        let nonce_tree = NonceTree::<NonceTreeConfig<Fr>>::new(
+            &pp,
+            &pp,
+            &BTreeMap::from_iter(
+                nonces
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &nonce)| (i as u64, nonce)),
+            ),
+        )
+        .unwrap();
+
+        let pp_var = CRHParametersVar::new_constant(cs.clone(), &pp).unwrap();
+        let root_var = FpVar::new_constant(cs.clone(), &nonce_tree.root()).unwrap();
 
         for _ in 0..100 {
             let expected_random_user_id = rng.gen_range(0..n_users);
-            let user_nonce_proof = nonce_tree.generate_proof(expected_random_user_id).unwrap();
-            let expected_random_user_id_var =
-                FpVar::new_witness(cs.clone(), || Ok(Fr::from(expected_random_user_id as u32)))
+            let user_nonce_proof = nonce_tree
+                .generate_proof(
+                    expected_random_user_id,
+                    &nonces[expected_random_user_id as usize],
+                )
+                .unwrap();
+            let expected_user_nonce_var =
+                FpVar::new_witness(cs.clone(), || Ok(Fr::from(nonces[expected_random_user_id as usize].0)))
                     .unwrap();
-            let user_nonce_proof_var = PathVar::<
-                NonceTreeConfig<Fr>,
-                Fr,
-                NonceTreeConfigGadget<NonceTreeConfig<Fr>, Fr>,
-            >::new_witness(cs.clone(), || {
-                Ok(user_nonce_proof)
-            })
-            .unwrap();
+            let user_nonce_proof_var =
+                MerkleSparseTreePathVar::<_, _, NonceTreeConfigGadget<_>>::new_witness(
+                    cs.clone(),
+                    || Ok(user_nonce_proof),
+                )
+                .unwrap();
 
-            TreeGadgets::compute_id_from_path_and_check(
-                &user_nonce_proof_var,
-                &expected_random_user_id_var,
-            )
-            .unwrap();
+            user_nonce_proof_var
+                .check_membership_with_index(
+                    &pp_var,
+                    &pp_var,
+                    &root_var,
+                    &expected_user_nonce_var,
+                    &FpVar::Constant(Fr::from(expected_random_user_id)),
+                )
+                .unwrap();
         }
 
         assert!(cs.is_satisfied().unwrap());

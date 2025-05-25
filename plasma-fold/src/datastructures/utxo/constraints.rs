@@ -13,7 +13,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::r1cs::{Namespace, SynthesisError};
 
-use crate::primitives::crh::constraints::UTXOVarCRH;
+use crate::primitives::{crh::constraints::UTXOVarCRH, sparsemt::constraints::SparseConfigGadget};
 
 use super::{UTXOTreeConfig, UTXO};
 
@@ -32,7 +32,11 @@ impl<F: PrimeField> AllocVar<UTXO, F> for UTXOVar<F> {
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
         let f = f()?;
-        let UTXO { amount, id, is_dummy } = f.borrow();
+        let UTXO {
+            amount,
+            id,
+            is_dummy,
+        } = f.borrow();
         Ok(Self {
             amount: FpVar::new_variable(cs.clone(), || Ok(F::from(*amount)), mode)?,
             id: FpVar::new_variable(cs.clone(), || Ok(F::from(*id)), mode)?,
@@ -52,4 +56,8 @@ impl<F: PrimeField + Absorb> ConfigGadget<UTXOTreeConfig<F>, F> for UTXOTreeConf
     type InnerDigest = FpVar<F>;
     type LeafHash = UTXOVarCRH<F>;
     type TwoToOneHash = TwoToOneCRHGadget<F>;
+}
+
+impl<F: PrimeField + Absorb> SparseConfigGadget<UTXOTreeConfig<F>, F> for UTXOTreeConfigGadget<F> {
+    const HEIGHT: u64 = 32;
 }

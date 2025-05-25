@@ -738,9 +738,6 @@ mod test {
     use ark_std::collections::BTreeMap;
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 
-    impl<F: PrimeField + Absorb> SparseConfig for UTXOTreeConfig<F> {
-        const HEIGHT: u64 = 32;
-    }
     type UTXOMerkleTree = MerkleSparseTree<UTXOTreeConfig<Fr>>;
 
     fn generate_merkle_tree_and_test_membership(
@@ -768,24 +765,12 @@ mod test {
         let pp = poseidon_canonical_config();
         let mut leaves: BTreeMap<u64, UTXO> = BTreeMap::new();
         for i in 1..10u8 {
-            leaves.insert(
-                i as u64,
-                UTXO {
-                    amount: i as u64,
-                    id: i as u32,
-                },
-            );
+            leaves.insert(i as u64, UTXO::new(i.into(), i.into()));
         }
         generate_merkle_tree_and_test_membership(&pp, &pp, &leaves);
         let mut leaves: BTreeMap<u64, UTXO> = BTreeMap::new();
         for i in 1..100u8 {
-            leaves.insert(
-                i as u64,
-                UTXO {
-                    amount: i as u64,
-                    id: i as u32,
-                },
-            );
+            leaves.insert(i as u64, UTXO::new(i.into(), i.into()));
         }
         generate_merkle_tree_and_test_membership(&pp, &pp, &leaves);
     }
@@ -814,13 +799,7 @@ mod test {
         let pp = poseidon_canonical_config::<Fr>();
         let mut leaves: BTreeMap<u64, UTXO> = BTreeMap::new();
         for i in 1..100u8 {
-            leaves.insert(
-                i as u64,
-                UTXO {
-                    id: i as u32,
-                    amount: i as u64,
-                },
-            );
+            leaves.insert(i as u64, UTXO::new(i.into(), i.into()));
         }
         generate_merkle_tree_with_bad_root_and_test_membership(&pp, &pp, &leaves);
     }
@@ -932,20 +911,15 @@ mod test {
         for i in 1..10u8 {
             old_leaves.insert(
                 i as u64,
-                UTXO {
-                    amount: i as u64,
-                    id: i as u32,
-                },
+                UTXO::new(i.into(), i.into()),
+
             );
         }
         let mut new_leaves: BTreeMap<u64, UTXO> = BTreeMap::new();
         for i in 1..20u8 {
             new_leaves.insert(
                 i as u64,
-                UTXO {
-                    amount: (i as u64) * 3,
-                    id: i as u32,
-                },
+                UTXO::new(i.into(), (i * 3).into()),
             );
         }
         generate_merkle_tree_and_test_update(&pp, &pp, &old_leaves, &new_leaves);

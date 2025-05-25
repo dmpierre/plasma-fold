@@ -1,7 +1,10 @@
 use std::marker::PhantomData;
 
 use super::{noncemap::Nonce, user::UserId, utxo::UTXO, TX_IO_SIZE};
-use crate::primitives::crh::TransactionCRH;
+use crate::primitives::{
+    crh::TransactionCRH,
+    sparsemt::{MerkleSparseTree, SparseConfig},
+};
 use ark_crypto_primitives::{
     crh::{poseidon::TwoToOneCRH, CRHScheme},
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
@@ -12,11 +15,21 @@ use ark_ff::PrimeField;
 
 pub mod constraints;
 
-#[derive(Clone, Debug, Copy, Default)]
+#[derive(Clone, Debug, Copy)]
 pub struct Transaction {
     pub inputs: [UTXO; TX_IO_SIZE],
     pub outputs: [UTXO; TX_IO_SIZE],
     pub nonce: Nonce,
+}
+
+impl Default for Transaction {
+    fn default() -> Self {
+        Transaction {
+            inputs: [UTXO::dummy(); TX_IO_SIZE],
+            outputs: [UTXO::dummy(); TX_IO_SIZE],
+            nonce: Nonce(0),
+        }
+    }
 }
 
 impl Transaction {
@@ -93,7 +106,7 @@ impl Transaction {
     }
 }
 
-pub type TransactionTree<P: Config> = MerkleTree<P>;
+pub type TransactionTree<P> = MerkleSparseTree<P>;
 
 pub struct TransactionTreeConfig<F: PrimeField> {
     _f: PhantomData<F>,
@@ -108,8 +121,14 @@ impl<F: PrimeField + Absorb> Config for TransactionTreeConfig<F> {
     type TwoToOneHash = TwoToOneCRH<F>;
 }
 
+impl<F: PrimeField + Absorb> SparseConfig for TransactionTreeConfig<F> {
+    const HEIGHT: u64 = 32;
+}
+
 #[cfg(test)]
 pub mod tests {
+
+    use std::collections::BTreeMap;
 
     use super::{Transaction, TransactionTreeConfig};
     use crate::{
@@ -125,7 +144,11 @@ pub mod tests {
             utxo::UTXO,
             TX_IO_SIZE,
         },
-        primitives::{crh::constraints::TransactionVarCRH, schnorr::SchnorrGadget},
+        primitives::{
+            crh::constraints::TransactionVarCRH,
+            schnorr::SchnorrGadget,
+            sparsemt::constraints::{MerkleSparseTreePathVar, MerkleSparseTreeTwoPathsVar},
+        },
     };
     use ark_bn254::Fr;
     use ark_crypto_primitives::{
@@ -133,7 +156,11 @@ pub mod tests {
         merkle_tree::constraints::PathVar,
     };
     use ark_grumpkin::{constraints::GVar, Projective};
-    use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
+    use ark_r1cs_std::{
+        alloc::AllocVar,
+        fields::{fp::FpVar, FieldVar},
+        R1CSVar,
+    };
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::rand::thread_rng;
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
@@ -150,11 +177,19 @@ pub mod tests {
         let transactions = (0..n_transactions)
             .map(|_| Transaction::default())
             .collect::<Vec<Transaction>>();
-        let tx_tree =
-            TransactionTree::<TransactionTreeConfig<Fr>>::new(&pp, &pp, transactions.clone())
-                .unwrap();
+        let tx_tree = TransactionTree::<TransactionTreeConfig<Fr>>::new(
+            &pp,
+            &pp,
+            &BTreeMap::from_iter(
+                transactions
+                    .iter()
+                    .enumerate()
+                    .map(|(i, tx)| (i as u64, tx.clone())),
+            ),
+        )
+        .unwrap();
 
-        let tx_path = tx_tree.generate_proof(0).unwrap();
+        let tx_path = tx_tree.generate_proof(0, &transactions[0]).unwrap();
 
         // Tx inclusion circuit
         let cs = ConstraintSystem::<Fr>::new_ref();
@@ -163,18 +198,25 @@ pub mod tests {
         // Initialize root, leaf and path as vars
         let tx_tree_root_var = FpVar::new_witness(cs.clone(), || Ok(tx_tree.root())).unwrap();
         let tx_leaf_var = TransactionVar::new_witness(cs.clone(), || Ok(transactions[0])).unwrap();
-        let tx_path_var: PathVar<
-            TransactionTreeConfig<Fr>,
-            Fr,
-            TransactionTreeConfigGadget<TransactionTreeConfig<Fr>, Fr>,
-        > = PathVar::new_witness(cs.clone(), || Ok(tx_path)).unwrap();
-
-        // Verify membership
-        let res = tx_path_var
-            .verify_membership(&pp_var, &pp_var, &tx_tree_root_var, &tx_leaf_var)
+        let tx_path_var =
+            MerkleSparseTreePathVar::<_, _, TransactionTreeConfigGadget<_>>::new_witness(
+                cs.clone(),
+                || Ok(tx_path),
+            )
             .unwrap();
 
-        assert!(res.value().unwrap());
+        // Verify membership
+        tx_path_var
+            .check_membership_with_index(
+                &pp_var,
+                &pp_var,
+                &tx_tree_root_var,
+                &tx_leaf_var,
+                &FpVar::zero(),
+            )
+            .unwrap();
+
+        assert!(cs.is_satisfied().unwrap());
     }
 
     #[test]
@@ -224,52 +266,63 @@ pub mod tests {
             .collect::<Vec<Transaction>>();
 
         // can not use blank, at least for now, since it requires LeafDigest::default();
-        let mut tx_tree =
-            TransactionTree::<TransactionTreeConfig<Fr>>::new(&pp, &pp, &empty_leaves).unwrap();
+        let mut tx_tree = TransactionTree::<TransactionTreeConfig<Fr>>::new(
+            &pp,
+            &pp,
+            &&BTreeMap::from_iter(
+                empty_leaves
+                    .iter()
+                    .enumerate()
+                    .map(|(i, tx)| (i as u64, tx.clone())),
+            ),
+        )
+        .unwrap();
 
         // initialize transactions received by the aggregator
         let transactions = (0..n_transactions)
             .map(|i| Transaction {
-                inputs: [UTXO::default(); TX_IO_SIZE],
-                outputs: [UTXO::default(); TX_IO_SIZE],
+                inputs: [UTXO::new(0, 10); TX_IO_SIZE],
+                outputs: [UTXO::new(0, 10); TX_IO_SIZE],
                 nonce: Nonce(i),
             })
             .collect::<Vec<Transaction>>();
 
         // build the tree incrementally and store intermediary roots
-        let mut update_proofs =
-            Vec::<TreeUpdateProof<TransactionTreeConfig<Fr>>>::with_capacity(transactions.len());
+        let mut update_proofs = Vec::with_capacity(transactions.len());
         for (idx, tx) in transactions.iter().enumerate() {
             let prev_root = tx_tree.root();
-            let path = tx_tree.generate_proof(idx).unwrap();
-            let prev_leaf = Transaction::default();
-            tx_tree.update(idx, tx).unwrap();
+            let update_proof = tx_tree.update_and_prove(idx as u64, tx).unwrap();
             let new_root = tx_tree.root();
-            let update_proof = TreeUpdateProof {
-                prev_root,
-                prev_leaf,
-                path,
-                new_root,
-                new_leaf: *tx,
-            };
-            tx_tree
-                .check_update::<Transaction>(idx, &update_proof.new_leaf, &update_proof.new_root)
+            update_proof
+                .verify(&pp, &pp, &prev_root, &new_root, &tx, idx as u64)
                 .unwrap();
-            update_proofs.push(update_proof);
+            update_proofs.push((update_proof, prev_root, new_root, tx, idx));
         }
 
         // tx tree update circuit
         let cs = ConstraintSystem::<Fr>::new_ref();
         let pp_var = CRHParametersVar::new_constant(cs.clone(), &pp).unwrap();
         let n_update_proofs = update_proofs.len();
-        for tx_update in update_proofs {
-            let update_var = TreeUpdateProofVar::<
-                _,
-                _,
-                TransactionTreeConfigGadget<TransactionTreeConfig<Fr>, Fr>,
-            >::new_witness(cs.clone(), || Ok(tx_update))
-            .unwrap();
-            let _ = TreeGadgets::update_and_check(&pp_var, &pp_var, update_var).unwrap();
+        for (tx_update, prev_root, new_root, tx, idx) in update_proofs {
+            let update_var =
+                MerkleSparseTreeTwoPathsVar::<_, _, TransactionTreeConfigGadget<_>>::new_witness(
+                    cs.clone(),
+                    || Ok(tx_update),
+                )
+                .unwrap();
+            let prev_root_var = FpVar::new_witness(cs.clone(), || Ok(prev_root)).unwrap();
+            let new_root_var = FpVar::new_witness(cs.clone(), || Ok(new_root)).unwrap();
+            let tx_var = TransactionVar::new_witness(cs.clone(), || Ok(tx)).unwrap();
+            let _ = update_var
+                .check_update(
+                    &pp_var,
+                    &pp_var,
+                    &prev_root_var,
+                    &new_root_var,
+                    &tx_var,
+                    &FpVar::constant(Fr::from(idx as u64)),
+                )
+                .unwrap();
         }
 
         assert!(cs.is_satisfied().unwrap());
