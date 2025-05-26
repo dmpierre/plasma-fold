@@ -1,6 +1,7 @@
 // Define the various CRH used in PlasmaFold
 use crate::datastructures::{
-    keypair::PublicKey, noncemap::Nonce, transaction::Transaction, user::UserId, utxo::UTXO,
+    block::Block, keypair::PublicKey, noncemap::Nonce, transaction::Transaction, user::UserId,
+    utxo::UTXO,
 };
 use ark_crypto_primitives::{
     crh::{poseidon::CRH, CRHScheme},
@@ -148,6 +149,33 @@ impl<F: PrimeField + Absorb> CRHScheme for UTXOCRH<F> {
     ) -> Result<Self::Output, Error> {
         let utxo: &UTXO = input.borrow();
         let input = [F::from(utxo.amount), F::from(utxo.id)];
+        Ok(CRH::evaluate(parameters, input)?)
+    }
+}
+
+pub struct BlockCRH<F: PrimeField> {
+    _f: PhantomData<F>,
+}
+
+impl<F: PrimeField + Absorb> CRHScheme for BlockCRH<F> {
+    type Input = Block<F>;
+    type Output = F;
+    type Parameters = PoseidonConfig<F>;
+
+    fn setup<R: Rng>(r: &mut R) -> Result<Self::Parameters, Error> {
+        todo!()
+    }
+
+    fn evaluate<T: Borrow<Self::Input>>(
+        parameters: &Self::Parameters,
+        input: T,
+    ) -> Result<Self::Output, Error> {
+        let block = input.borrow();
+        let input = [
+            block.utxo_tree_root,
+            block.tx_tree_root,
+            block.signer_tree_root,
+        ];
         Ok(CRH::evaluate(parameters, input)?)
     }
 }
