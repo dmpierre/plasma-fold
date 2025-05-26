@@ -14,6 +14,8 @@ use super::{
     transaction::Transaction,
 };
 
+pub mod constraints;
+
 pub const ROLLUP_CONTRACT_ID: u32 = 0;
 
 pub type UserId = u32;
@@ -60,10 +62,6 @@ impl<
         for utxo in tx.outputs.iter().filter(|utxo| !utxo.is_dummy) {
             self.balance += utxo.amount;
         }
-    }
-
-    pub fn to_ivc_inputs(&self) {
-        todo!()
     }
 }
 

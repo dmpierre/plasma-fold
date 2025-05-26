@@ -1,5 +1,3 @@
-// z_i is (balance, nonce, id, acc)
-// z_i is a vec of FpVar<F> in sonobe
 // accumulate the block into the block accumulator (acc)
 //
 
