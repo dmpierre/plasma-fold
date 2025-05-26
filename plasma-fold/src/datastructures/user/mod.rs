@@ -11,6 +11,7 @@ use ark_std::UniformRand;
 use super::{
     keypair::{KeyPair, Signature},
     noncemap::Nonce,
+    transaction::Transaction,
 };
 
 pub const ROLLUP_CONTRACT_ID: u32 = 0;
@@ -19,9 +20,10 @@ pub type UserId = u32;
 pub type UserIdVar<F> = FpVar<F>;
 
 pub struct User<C: CurveGroup> {
-    pub id: UserId,
     pub keypair: KeyPair<C>,
+    pub balance: u64,
     pub nonce: Nonce,
+    pub acc: C::ScalarField,
 }
 
 impl<
@@ -32,9 +34,10 @@ impl<
 {
     pub fn new(rng: &mut impl Rng, id: UserId) -> Self {
         Self {
-            id,
             keypair: KeyPair::new(rng),
             nonce: Nonce(0),
+            balance: u64::default(),
+            acc: C::ScalarField::default(),
         }
     }
     pub fn sign(
@@ -45,13 +48,31 @@ impl<
     ) -> Result<Signature<F>, Error> {
         Ok(self.keypair.sk.sign::<C>(pp, m, rng)?)
     }
+
+    pub fn spend_transaction(&mut self, tx: Transaction) {
+        for utxo in tx.inputs.iter().filter(|utxo| !utxo.is_dummy) {
+            self.balance -= utxo.amount;
+        }
+        self.nonce.0 += 1;
+    }
+
+    pub fn receive_transaction(&mut self, tx: Transaction) {
+        for utxo in tx.outputs.iter().filter(|utxo| !utxo.is_dummy) {
+            self.balance += utxo.amount;
+        }
+    }
+
+    pub fn to_ivc_inputs(&self) {
+        todo!()
+    }
 }
 
 pub fn sample_user<C: CurveGroup<BaseField: PrimeField + Absorb>>(rng: &mut impl Rng) -> User<C> {
     let keypair = KeyPair::new(rng);
     User {
-        id: u32::rand(rng),
         keypair,
         nonce: Nonce(u64::rand(rng)),
+        balance: u64::default(),
+        acc: C::ScalarField::default(),
     }
 }
