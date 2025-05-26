@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use ark_crypto_primitives::{
     crh::CRHScheme,
-    merkle_tree::Path,
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ec::CurveGroup;
@@ -12,6 +11,7 @@ use plasma_fold::{
         block::Block,
         keypair::{PublicKey, Signature},
         noncemap::{Nonce, NonceTree, NonceTreeConfig},
+        signerlist::{SignerTree, SignerTreeConfig},
         transaction::{Transaction, TransactionTree, TransactionTreeConfig},
         user::{UserId, ROLLUP_CONTRACT_ID},
         utxo::{UTXOTree, UTXOTreeConfig, UTXO},
@@ -21,7 +21,7 @@ use plasma_fold::{
 
 pub mod circuit;
 
-pub struct AggregatorState<F: PrimeField + Absorb> {
+pub struct AggregatorState<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
     pub config: PoseidonConfig<F>,
 
     pub utxos: HashMap<UTXO, Vec<usize>>,
@@ -33,13 +33,14 @@ pub struct AggregatorState<F: PrimeField + Absorb> {
     pub nonce_tree: NonceTree<NonceTreeConfig<F>>,
     pub deposits: Vec<UTXO>,
     pub withdrawals: Vec<UTXO>,
+    pub signer_tree: SignerTree<SignerTreeConfig<C>>,
     pub signers: Vec<Option<UserId>>,
 
     pub acc_signer: F,
     pub acc_pk: F,
 }
 
-impl<F: PrimeField + Absorb> AggregatorState<F> {
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C> {
     pub fn new(config: PoseidonConfig<F>) -> Self {
         Self {
             utxos: HashMap::new(),
@@ -49,6 +50,7 @@ impl<F: PrimeField + Absorb> AggregatorState<F> {
             transaction_tree: TransactionTree::blank(&config, &config),
             nonces: HashMap::new(),
             nonce_tree: NonceTree::blank(&config, &config),
+            signer_tree: SignerTree::blank(&config, &config),
             config,
             deposits: vec![],
             withdrawals: vec![],
@@ -98,7 +100,7 @@ impl<F: PrimeField + Absorb> AggregatorState<F> {
             .unwrap()
     }
 
-    pub fn process_signatures<C: CurveGroup<BaseField = F>>(
+    pub fn process_signatures(
         &mut self,
         inputs: Vec<(UserId, PublicKey<C>, Option<Signature<C::ScalarField>>)>,
     ) {
@@ -151,6 +153,7 @@ impl<F: PrimeField + Absorb> AggregatorState<F> {
         Block {
             utxo_tree_root: self.utxo_tree.root(),
             tx_tree_root: self.transaction_tree.root(),
+            signer_tree_root: self.signer_tree.root(),
             signers: self.signers.clone(),
             deposits: self.deposits.clone(),
             withdrawals: self.withdrawals.clone(),

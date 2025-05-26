@@ -2,7 +2,10 @@ use std::marker::PhantomData;
 
 use crate::{
     datastructures::user::UserId,
-    primitives::crh::{PublicKeyCRH, UserIdCRH},
+    primitives::{
+        crh::{PublicKeyCRH, UserIdCRH},
+        sparsemt::{MerkleSparseTree, MerkleSparseTreeTwoPaths, SparseConfig},
+    },
 };
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
@@ -17,7 +20,7 @@ use super::keypair::PublicKey;
 pub mod constraints;
 
 pub type SignerList = Vec<u32>;
-pub type SignerTree<P: Config> = MerkleTree<P>;
+pub type SignerTree<P: Config> = MerkleSparseTree<P>;
 
 pub struct SignerTreeConfig<C: CurveGroup> {
     _c: PhantomData<C>,
@@ -30,4 +33,8 @@ impl<C: CurveGroup<BaseField: Absorb + PrimeField>> Config for SignerTreeConfig<
     type InnerDigest = C::BaseField;
     type LeafHash = PublicKeyCRH<C>;
     type TwoToOneHash = TwoToOneCRH<C::BaseField>;
+}
+
+impl<C: CurveGroup<BaseField: Absorb + PrimeField>> SparseConfig for SignerTreeConfig<C> {
+    const HEIGHT: u64 = 13;
 }
