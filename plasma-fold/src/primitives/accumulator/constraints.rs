@@ -14,21 +14,16 @@ use ark_r1cs_std::{
 use ark_relations::r1cs::SynthesisError;
 
 pub struct Sha256AccumulatorVar<F: PrimeField> {
-    pub value: FpVar<F>,
+    _f: PhantomData<F>,
 }
 
 impl<F: PrimeField> Sha256AccumulatorVar<F> {
-    pub fn update(&mut self, value: FpVar<F>) -> Result<(), SynthesisError> {
+    pub fn update(prev: FpVar<F>, value: FpVar<F>) -> Result<FpVar<F>, SynthesisError> {
         let right_input = value.to_bytes_le()?;
-        let digest = Sha256Gadget::evaluate(
-            &UnitVar::default(),
-            &self.value.to_bytes_le()?,
-            &right_input,
-        )?
-        .0;
+        let digest =
+            Sha256Gadget::evaluate(&UnitVar::default(), &prev.to_bytes_le()?, &right_input)?.0;
         // drop the last byte
         let (_, value) = digest.split_last().unwrap();
-        self.value = value.to_constraint_field()?[0].clone();
-        Ok(())
+        Ok(value.to_constraint_field()?[0].clone())
     }
 }
