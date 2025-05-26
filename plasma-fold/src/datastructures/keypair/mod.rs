@@ -17,9 +17,7 @@ pub struct SecretKey<F: PrimeField> {
 
 impl<F: PrimeField> SecretKey<F> {
     pub fn new(rng: &mut impl Rng) -> Self {
-        Self {
-            key: F::rand(rng),
-        }
+        Self { key: F::rand(rng) }
     }
 
     pub fn sign<C: CurveGroup<ScalarField = F, BaseField: PrimeField + Absorb>>(
@@ -34,7 +32,7 @@ impl<F: PrimeField> SecretKey<F> {
 }
 
 // Schnorr public key
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PublicKey<C: CurveGroup> {
     pub key: C,
 }
