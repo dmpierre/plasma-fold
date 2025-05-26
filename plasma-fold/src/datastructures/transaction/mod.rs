@@ -122,7 +122,7 @@ impl<F: PrimeField + Absorb> Config for TransactionTreeConfig<F> {
 }
 
 impl<F: PrimeField + Absorb> SparseConfig for TransactionTreeConfig<F> {
-    const HEIGHT: u64 = 32;
+    const HEIGHT: u64 = 13;
 }
 
 #[cfg(test)]
