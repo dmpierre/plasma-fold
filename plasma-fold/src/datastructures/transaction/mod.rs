@@ -1,9 +1,12 @@
 use std::marker::PhantomData;
 
 use super::{noncemap::Nonce, user::UserId, utxo::UTXO, TX_IO_SIZE};
-use crate::primitives::{
-    crh::TransactionCRH,
-    sparsemt::{MerkleSparseTree, SparseConfig},
+use crate::{
+    primitives::{
+        crh::TransactionCRH,
+        sparsemt::{MerkleSparseTree, SparseConfig},
+    },
+    TX_TREE_HEIGHT,
 };
 use ark_crypto_primitives::{
     crh::{poseidon::TwoToOneCRH, CRHScheme},
@@ -122,7 +125,7 @@ impl<F: PrimeField + Absorb> Config for TransactionTreeConfig<F> {
 }
 
 impl<F: PrimeField + Absorb> SparseConfig for TransactionTreeConfig<F> {
-    const HEIGHT: u64 = 13;
+    const HEIGHT: u64 = TX_TREE_HEIGHT;
 }
 
 #[cfg(test)]
@@ -132,7 +135,6 @@ pub mod tests {
 
     use super::{Transaction, TransactionTreeConfig};
     use crate::{
-        circuits::gadgets::{TreeGadgets, TreeUpdateProof, TreeUpdateProofVar},
         datastructures::{
             keypair::constraints::{PublicKeyVar, SignatureVar},
             noncemap::Nonce,

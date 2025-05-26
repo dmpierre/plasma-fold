@@ -10,7 +10,8 @@ use std::marker::PhantomData;
 
 use crate::{
     datastructures::keypair::constraints::PublicKeyVar,
-    primitives::crh::constraints::PublicKeyVarCRH,
+    primitives::{crh::constraints::PublicKeyVarCRH, sparsemt::constraints::SparseConfigGadget},
+    SIGNER_TREE_HEIGHT, TX_TREE_HEIGHT,
 };
 
 use super::SignerTreeConfig;
@@ -32,4 +33,10 @@ where
     type InnerDigest = FpVar<C::BaseField>;
     type LeafHash = PublicKeyVarCRH<C, CVar>;
     type TwoToOneHash = TwoToOneCRHGadget<C::BaseField>;
+}
+
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    SparseConfigGadget<SignerTreeConfig<C>, F> for SignerTreeConfigGadget<F, C, CVar>
+{
+    const HEIGHT: u64 = SIGNER_TREE_HEIGHT;
 }

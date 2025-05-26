@@ -6,6 +6,7 @@ use crate::{
         crh::{PublicKeyCRH, UserIdCRH},
         sparsemt::{MerkleSparseTree, MerkleSparseTreeTwoPaths, SparseConfig},
     },
+    SIGNER_TREE_HEIGHT, TX_TREE_HEIGHT,
 };
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
@@ -36,5 +37,5 @@ impl<C: CurveGroup<BaseField: Absorb + PrimeField>> Config for SignerTreeConfig<
 }
 
 impl<C: CurveGroup<BaseField: Absorb + PrimeField>> SparseConfig for SignerTreeConfig<C> {
-    const HEIGHT: u64 = 13;
+    const HEIGHT: u64 = SIGNER_TREE_HEIGHT;
 }

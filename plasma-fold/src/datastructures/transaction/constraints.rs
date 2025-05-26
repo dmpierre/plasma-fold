@@ -19,7 +19,11 @@ use crate::{
     datastructures::{
         noncemap::constraints::NonceVar, user::UserIdVar, utxo::constraints::UTXOVar, TX_IO_SIZE,
     },
-    primitives::{crh::constraints::TransactionVarCRH, sparsemt::constraints::SparseConfigGadget},
+    primitives::{
+        crh::constraints::TransactionVarCRH,
+        sparsemt::{constraints::SparseConfigGadget, SparseConfig},
+    },
+    TX_TREE_HEIGHT,
 };
 
 use super::{Transaction, TransactionTreeConfig};
@@ -87,7 +91,7 @@ impl<F: PrimeField + Absorb> ConfigGadget<TransactionTreeConfig<F>, F>
 impl<F: PrimeField + Absorb> SparseConfigGadget<TransactionTreeConfig<F>, F>
     for TransactionTreeConfigGadget<F>
 {
-    const HEIGHT: u64 = 32;
+    const HEIGHT: u64 = TX_TREE_HEIGHT;
 }
 
 impl<F: PrimeField> TransactionVar<F> {
