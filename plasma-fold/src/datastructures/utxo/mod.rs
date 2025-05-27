@@ -1,40 +1,47 @@
-use std::{fmt::{Debug, Display}, marker::PhantomData};
+use std::{
+    fmt::{Debug, Display},
+    marker::PhantomData,
+};
 
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
     merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     sponge::Absorb,
 };
+use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 
-use crate::primitives::{crh::UTXOCRH, sparsemt::{MerkleSparseTree, SparseConfig}};
+use crate::primitives::{
+    crh::UTXOCRH,
+    sparsemt::{MerkleSparseTree, SparseConfig},
+};
 
-use super::user::UserId;
+use super::{keypair::PublicKey, user::UserId};
 
 pub mod constraints;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct UTXO {
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+pub struct UTXO<C: CurveGroup> {
     pub amount: u64,
-    pub id: UserId,
+    pub pk: PublicKey<C>,
     pub is_dummy: bool,
 }
 
-impl Debug for UTXO {
+impl<C: CurveGroup> Debug for UTXO<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_dummy {
             write!(f, "UTXO(dummy)")
         } else {
-            write!(f, "UTXO({}, {})", self.id, self.amount)
+            write!(f, "UTXO({:?}, {})", self.pk, self.amount)
         }
     }
 }
 
-impl UTXO {
-    pub fn new(id: UserId, amount: u64) -> Self {
+impl<C: CurveGroup> UTXO<C> {
+    pub fn new(pk: PublicKey<C>, amount: u64) -> Self {
         UTXO {
             amount,
-            id,
+            pk,
             is_dummy: false,
         }
     }
@@ -42,13 +49,13 @@ impl UTXO {
     pub fn dummy() -> Self {
         UTXO {
             amount: 0,
-            id: 0,
+            pk: PublicKey::default(),
             is_dummy: true,
         }
     }
 }
 
-impl Default for UTXO {
+impl<C: CurveGroup> Default for UTXO<C> {
     fn default() -> Self {
         UTXO::dummy()
     }
@@ -56,19 +63,20 @@ impl Default for UTXO {
 
 pub type UTXOTree<P> = MerkleSparseTree<P>;
 
-pub struct UTXOTreeConfig<F: PrimeField> {
-    _f: PhantomData<F>,
+pub struct UTXOTreeConfig<C: CurveGroup> {
+    _c: PhantomData<C>,
 }
 
-impl<F: PrimeField + Absorb> Config for UTXOTreeConfig<F> {
-    type Leaf = UTXO;
-    type LeafDigest = F;
-    type LeafInnerDigestConverter = IdentityDigestConverter<F>;
-    type InnerDigest = F;
-    type LeafHash = UTXOCRH<F>;
-    type TwoToOneHash = TwoToOneCRH<F>;
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> Config for UTXOTreeConfig<C> {
+    type Leaf = UTXO<C>;
+    type LeafDigest = C::BaseField;
+    type LeafInnerDigestConverter = IdentityDigestConverter<C::BaseField>;
+    type InnerDigest = C::BaseField;
+    type LeafHash = UTXOCRH<C>;
+    type TwoToOneHash = TwoToOneCRH<C::BaseField>;
 }
 
-impl<F: PrimeField + Absorb> SparseConfig for UTXOTreeConfig<F> {
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> SparseConfig for UTXOTreeConfig<C> {
     const HEIGHT: u64 = 32;
 }
+

@@ -18,12 +18,13 @@ use std::{borrow::Borrow, marker::PhantomData};
 pub mod constraints;
 
 // computes H(transaction)
-pub struct TransactionCRH<F: PrimeField + Absorb> {
+pub struct TransactionCRH<F: PrimeField + Absorb, C: CurveGroup> {
     _f: PhantomData<F>,
+    _c: PhantomData<C>,
 }
 
-impl<F: PrimeField + Absorb> CRHScheme for TransactionCRH<F> {
-    type Input = Transaction;
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> CRHScheme for TransactionCRH<F, C> {
+    type Input = Transaction<C>;
     type Output = F;
     type Parameters = PoseidonConfig<F>;
 
@@ -37,7 +38,7 @@ impl<F: PrimeField + Absorb> CRHScheme for TransactionCRH<F> {
         parameters: &Self::Parameters,
         input: T,
     ) -> Result<Self::Output, Error> {
-        let tx: &Transaction = input.borrow();
+        let tx: &Transaction<C> = input.borrow();
         let elements: Vec<F> = tx.into();
         let res = CRH::evaluate(parameters, elements.as_slice())?;
         Ok(res)
@@ -128,14 +129,14 @@ impl<F: PrimeField + Absorb + From<UserId>> CRHScheme for UserIdCRH<F> {
     }
 }
 
-pub struct UTXOCRH<F: PrimeField> {
-    _f: PhantomData<F>,
+pub struct UTXOCRH<C: CurveGroup<BaseField: PrimeField + Absorb>> {
+    _f: PhantomData<C>,
 }
 
-impl<F: PrimeField + Absorb> CRHScheme for UTXOCRH<F> {
-    type Input = UTXO;
-    type Output = F;
-    type Parameters = PoseidonConfig<F>;
+impl<C: CurveGroup<BaseField: PrimeField + Absorb>> CRHScheme for UTXOCRH<C> {
+    type Input = UTXO<C>;
+    type Output = C::BaseField;
+    type Parameters = PoseidonConfig<C::BaseField>;
 
     fn setup<R: Rng>(_rng: &mut R) -> Result<Self::Parameters, Error> {
         // automatic generation of parameters are not implemented yet
@@ -147,8 +148,11 @@ impl<F: PrimeField + Absorb> CRHScheme for UTXOCRH<F> {
         parameters: &Self::Parameters,
         input: T,
     ) -> Result<Self::Output, Error> {
-        let utxo: &UTXO = input.borrow();
-        let input = [F::from(utxo.amount), F::from(utxo.id)];
+        let utxo: &UTXO<C> = input.borrow();
+        let input = [
+            C::BaseField::from(utxo.amount),
+            C::BaseField::from(utxo.is_dummy),
+        ];
         Ok(CRH::evaluate(parameters, input)?)
     }
 }

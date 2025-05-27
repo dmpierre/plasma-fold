@@ -2,14 +2,16 @@ use std::{convert::TryInto, marker::PhantomData};
 
 use ark_crypto_primitives::{
     crh::poseidon::constraints::TwoToOneCRHGadget,
-    merkle_tree::{constraints::ConfigGadget, Config, IdentityDigestConverter},
+    merkle_tree::{constraints::ConfigGadget, IdentityDigestConverter},
     sponge::Absorb,
 };
+use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     eq::EqGadget,
     fields::{fp::FpVar, FieldVar},
+    groups::CurveVar,
     prelude::Boolean,
 };
 use ark_relations::r1cs::{Namespace, SynthesisError};
@@ -17,24 +19,24 @@ use ark_std::borrow::Borrow;
 
 use crate::{
     datastructures::{
-        noncemap::constraints::NonceVar, user::UserIdVar, utxo::constraints::UTXOVar, TX_IO_SIZE,
+        keypair::constraints::PublicKeyVar, noncemap::constraints::NonceVar, user::UserIdVar,
+        utxo::constraints::UTXOVar, TX_IO_SIZE,
     },
-    primitives::{
-        crh::constraints::TransactionVarCRH,
-        sparsemt::{constraints::SparseConfigGadget, SparseConfig},
-    },
+    primitives::{crh::constraints::TransactionVarCRH, sparsemt::constraints::SparseConfigGadget},
     TX_TREE_HEIGHT,
 };
 
 use super::{Transaction, TransactionTreeConfig};
 
-impl<F: PrimeField> Into<Vec<FpVar<F>>> for &TransactionVar<F> {
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>> Into<Vec<FpVar<F>>>
+    for &TransactionVar<F, C, CVar>
+{
     fn into(self) -> Vec<FpVar<F>> {
         let mut arr = self
             .inputs
             .iter()
             .chain(&self.outputs)
-            .flat_map(|utxo| [utxo.amount.clone(), utxo.id.clone()])
+            .flat_map(|utxo| [utxo.amount.clone(), utxo.is_dummy.clone().into()])
             .collect::<Vec<_>>();
         arr.push(self.nonce.clone());
         arr
@@ -42,14 +44,20 @@ impl<F: PrimeField> Into<Vec<FpVar<F>>> for &TransactionVar<F> {
 }
 
 #[derive(Debug)]
-pub struct TransactionVar<F: PrimeField> {
-    inputs: [UTXOVar<F>; TX_IO_SIZE],
-    outputs: [UTXOVar<F>; TX_IO_SIZE],
+pub struct TransactionVar<
+    F: PrimeField + Absorb,
+    C: CurveGroup<BaseField = F>,
+    CVar: CurveVar<C, F>,
+> {
+    inputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
+    outputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
     nonce: FpVar<F>,
 }
 
-impl<F: PrimeField> AllocVar<Transaction, F> for TransactionVar<F> {
-    fn new_variable<T: Borrow<Transaction>>(
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    AllocVar<Transaction<C>, F> for TransactionVar<F, C, CVar>
+{
+    fn new_variable<T: Borrow<Transaction<C>>>(
         cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
@@ -73,37 +81,41 @@ impl<F: PrimeField> AllocVar<Transaction, F> for TransactionVar<F> {
     }
 }
 
-pub struct TransactionTreeConfigGadget<F: PrimeField> {
+pub struct TransactionTreeConfigGadget<F: PrimeField, C: CurveGroup, CVar: CurveVar<C, F>> {
     _f: PhantomData<F>,
+    _c: PhantomData<C>,
+    _cvar: PhantomData<CVar>,
 }
 
-impl<F: PrimeField + Absorb> ConfigGadget<TransactionTreeConfig<F>, F>
-    for TransactionTreeConfigGadget<F>
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    ConfigGadget<TransactionTreeConfig<C>, F> for TransactionTreeConfigGadget<F, C, CVar>
 {
-    type Leaf = TransactionVar<F>;
+    type Leaf = TransactionVar<F, C, CVar>;
     type LeafDigest = FpVar<F>;
     type LeafInnerConverter = IdentityDigestConverter<FpVar<F>>;
     type InnerDigest = FpVar<F>;
-    type LeafHash = TransactionVarCRH<F>;
+    type LeafHash = TransactionVarCRH<F, C, CVar>;
     type TwoToOneHash = TwoToOneCRHGadget<F>;
 }
 
-impl<F: PrimeField + Absorb> SparseConfigGadget<TransactionTreeConfig<F>, F>
-    for TransactionTreeConfigGadget<F>
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    SparseConfigGadget<TransactionTreeConfig<C>, F> for TransactionTreeConfigGadget<F, C, CVar>
 {
     const HEIGHT: u64 = TX_TREE_HEIGHT;
 }
 
-impl<F: PrimeField> TransactionVar<F> {
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    TransactionVar<F, C, CVar>
+{
     pub fn is_valid(
         &self,
-        sender: Option<UserIdVar<F>>,
+        sender: Option<PublicKeyVar<C, CVar>>,
         nonce: Option<NonceVar<F>>,
     ) -> Result<Boolean<F>, SynthesisError> {
         let mut result = Boolean::TRUE;
-        let sender = sender.unwrap_or(self.inputs[0].id.clone());
+        let sender = sender.unwrap_or(self.inputs[0].pk.clone());
         for i in &self.inputs {
-            result &= i.id.is_eq(&sender)?;
+            result &= i.pk.key.is_eq(&sender.key)?;
         }
         result &= self
             .inputs

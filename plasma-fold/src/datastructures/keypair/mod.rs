@@ -32,7 +32,7 @@ impl<F: PrimeField> SecretKey<F> {
 }
 
 // Schnorr public key
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash)]
 pub struct PublicKey<C: CurveGroup> {
     pub key: C,
 }

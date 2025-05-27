@@ -465,6 +465,7 @@ impl<MP: SparseConfig, F: PrimeField, P: SparseConfigGadget<MP, F>>
 mod test {
     use std::collections::BTreeMap;
 
+    use crate::datastructures::keypair::PublicKey;
     use crate::datastructures::utxo::constraints::{UTXOTreeConfigGadget, UTXOVar};
     use crate::datastructures::utxo::{UTXOTreeConfig, UTXO};
     use crate::primitives::crh::constraints::UTXOVarCRH;
@@ -472,16 +473,18 @@ mod test {
     use ark_bn254::Fr;
     use ark_crypto_primitives::crh::poseidon::constraints::CRHParametersVar;
     use ark_crypto_primitives::crh::CRHScheme;
+    use ark_grumpkin::constraints::GVar;
+    use ark_grumpkin::Projective;
     use ark_relations::r1cs::ConstraintSystem;
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 
     use super::*;
 
-    type UTXOMerkleTree = MerkleSparseTree<UTXOTreeConfig<Fr>>;
-    type H = UTXOCRH<Fr>;
-    type HG = UTXOVarCRH<Fr>;
+    type UTXOMerkleTree = MerkleSparseTree<UTXOTreeConfig<Projective>>;
+    type H = UTXOCRH<Projective>;
+    type HG = UTXOVarCRH<Fr, Projective, GVar>;
 
-    fn generate_merkle_tree(leaves: &BTreeMap<u64, UTXO>, use_bad_root: bool) -> usize {
+    fn generate_merkle_tree(leaves: &BTreeMap<u64, UTXO<Projective>>, use_bad_root: bool) -> usize {
         let pp = poseidon_canonical_config();
 
         let tree = UTXOMerkleTree::new(&pp, &pp, leaves).unwrap();
@@ -515,11 +518,13 @@ mod test {
             let index_g = FpVar::new_constant(cs.clone(), Fr::from(*i)).unwrap();
 
             // Allocate Merkle Tree Path
-            let cw = MerkleSparseTreePathVar::<UTXOTreeConfig<Fr>, Fr, UTXOTreeConfigGadget<Fr>>::new_witness(
-                ark_relations::ns!(cs, "new_witness"),
-                || Ok(proof),
-            )
-            .unwrap();
+            let cw =
+                MerkleSparseTreePathVar::<
+                    UTXOTreeConfig<Projective>,
+                    Fr,
+                    UTXOTreeConfigGadget<_, _, GVar>,
+                >::new_witness(ark_relations::ns!(cs, "new_witness"), || Ok(proof))
+                .unwrap();
 
             cw.check_membership(
                 ark_relations::ns!(cs, "check_membership").cs(),
@@ -548,7 +553,7 @@ mod test {
     fn good_root_membership_test() {
         let mut leaves = BTreeMap::new();
         for i in 1..10u8 {
-            leaves.insert(i as u64, UTXO::new(i.into(), i as u64 * 10));
+            leaves.insert(i as u64, UTXO::new(PublicKey::default(), i as u64 * 10));
         }
         let n_constraints = generate_merkle_tree(&leaves, false);
         println!("good_root_membership_test n constraints: {}", n_constraints);
@@ -559,17 +564,14 @@ mod test {
     fn bad_root_membership_test() {
         let mut leaves = BTreeMap::new();
         for i in 1..10u8 {
-            leaves.insert(
-                i as u64,
-                UTXO::new(i.into(), i as u64 * 10),
-            );
+            leaves.insert(i as u64, UTXO::new(PublicKey::default(), i as u64 * 10));
         }
         generate_merkle_tree(&leaves, true);
     }
 
     fn generate_merkle_tree_and_test_update(
-        old_leaves: &BTreeMap<u64, UTXO>,
-        new_leaves: &BTreeMap<u64, UTXO>,
+        old_leaves: &BTreeMap<u64, UTXO<Projective>>,
+        new_leaves: &BTreeMap<u64, UTXO<Projective>>,
     ) -> usize {
         let pp = poseidon_canonical_config();
         let mut tree = UTXOMerkleTree::new(&pp, &pp, old_leaves).unwrap();
@@ -594,16 +596,18 @@ mod test {
                 .unwrap());
 
             // Allocate Merkle Tree Root
-            let old_root_gadget = <HG as CRHSchemeGadget<UTXOCRH<Fr>, Fr>>::OutputVar::new_witness(
-                ark_relations::ns!(cs, "old_digest"),
-                || Ok(old_root),
-            )
-            .unwrap();
-            let new_root_gadget = <HG as CRHSchemeGadget<UTXOCRH<Fr>, Fr>>::OutputVar::new_witness(
-                ark_relations::ns!(cs, "new_digest"),
-                || Ok(new_root),
-            )
-            .unwrap();
+            let old_root_gadget =
+                <HG as CRHSchemeGadget<UTXOCRH<Projective>, Fr>>::OutputVar::new_witness(
+                    ark_relations::ns!(cs, "old_digest"),
+                    || Ok(old_root),
+                )
+                .unwrap();
+            let new_root_gadget =
+                <HG as CRHSchemeGadget<UTXOCRH<Projective>, Fr>>::OutputVar::new_witness(
+                    ark_relations::ns!(cs, "new_digest"),
+                    || Ok(new_root),
+                )
+                .unwrap();
 
             // Allocate Leaf
             let leaf_g =
@@ -612,9 +616,9 @@ mod test {
 
             // Allocate Merkle Tree Path
             let update_proof_cw = MerkleSparseTreeTwoPathsVar::<
-                UTXOTreeConfig<Fr>,
+                UTXOTreeConfig<Projective>,
                 Fr,
-                UTXOTreeConfigGadget<Fr>,
+                UTXOTreeConfigGadget<Fr, Projective, GVar>,
             >::new_witness(
                 ark_relations::ns!(cs, "new_witness_update"),
                 || Ok(update_proof),
@@ -622,9 +626,9 @@ mod test {
             .unwrap();
 
             let new_leaf_membership_proof_cw = MerkleSparseTreePathVar::<
-                UTXOTreeConfig<Fr>,
+                UTXOTreeConfig<Projective>,
                 Fr,
-                UTXOTreeConfigGadget<Fr>,
+                UTXOTreeConfigGadget<Fr, Projective, GVar>,
             >::new_witness(
                 ark_relations::ns!(cs, "new_witness_new_membership"),
                 || Ok(new_leaf_membership_proof),
@@ -661,18 +665,12 @@ mod test {
     fn good_root_update_test() {
         let mut old_leaves = BTreeMap::new();
         for i in 1..4u64 {
-            old_leaves.insert(
-                i,
-                UTXO::new(i as u32, i * 10),
-            );
+            old_leaves.insert(i, UTXO::new(PublicKey::default(), i * 10));
         }
 
         let mut new_leaves = BTreeMap::new();
         for i in 1..4u64 {
-            new_leaves.insert(
-                i as u64,
-                UTXO::new(i as u32, i * 100),
-            );
+            new_leaves.insert(i as u64, UTXO::new(PublicKey::default(), i * 100));
         }
         let n_constraints = generate_merkle_tree_and_test_update(&old_leaves, &new_leaves);
         println!("good_root_update_test n constraints: {}", n_constraints);

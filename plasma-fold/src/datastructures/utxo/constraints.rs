@@ -5,27 +5,34 @@ use ark_crypto_primitives::{
     merkle_tree::{constraints::ConfigGadget, IdentityDigestConverter},
     sponge::Absorb,
 };
+use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     fields::fp::FpVar,
+    groups::CurveVar,
     prelude::Boolean,
 };
 use ark_relations::r1cs::{Namespace, SynthesisError};
 
-use crate::primitives::{crh::constraints::UTXOVarCRH, sparsemt::constraints::SparseConfigGadget};
+use crate::{
+    datastructures::keypair::{constraints::PublicKeyVar, PublicKey},
+    primitives::{crh::constraints::UTXOVarCRH, sparsemt::constraints::SparseConfigGadget},
+};
 
 use super::{UTXOTreeConfig, UTXO};
 
 #[derive(Debug)]
-pub struct UTXOVar<F: PrimeField> {
+pub struct UTXOVar<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>> {
     pub amount: FpVar<F>,
-    pub id: FpVar<F>,
+    pub pk: PublicKeyVar<C, CVar>,
     pub is_dummy: Boolean<F>,
 }
 
-impl<F: PrimeField> AllocVar<UTXO, F> for UTXOVar<F> {
-    fn new_variable<T: Borrow<UTXO>>(
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    AllocVar<UTXO<C>, F> for UTXOVar<F, C, CVar>
+{
+    fn new_variable<T: Borrow<UTXO<C>>>(
         cs: impl Into<Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
@@ -34,30 +41,36 @@ impl<F: PrimeField> AllocVar<UTXO, F> for UTXOVar<F> {
         let f = f()?;
         let UTXO {
             amount,
-            id,
+            pk,
             is_dummy,
         } = f.borrow();
         Ok(Self {
             amount: FpVar::new_variable(cs.clone(), || Ok(F::from(*amount)), mode)?,
-            id: FpVar::new_variable(cs.clone(), || Ok(F::from(*id)), mode)?,
+            pk: PublicKeyVar::new_variable(cs.clone(), || Ok(PublicKey::from(*pk)), mode)?,
             is_dummy: Boolean::new_variable(cs, || Ok(is_dummy), mode)?,
         })
     }
 }
 
-pub struct UTXOTreeConfigGadget<F: PrimeField> {
+pub struct UTXOTreeConfigGadget<F: PrimeField + Absorb, C: CurveGroup, CVar: CurveVar<C, F>> {
     _f: PhantomData<F>,
+    _c: PhantomData<C>,
+    _cvar: PhantomData<CVar>,
 }
 
-impl<F: PrimeField + Absorb> ConfigGadget<UTXOTreeConfig<F>, F> for UTXOTreeConfigGadget<F> {
-    type Leaf = UTXOVar<F>;
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    ConfigGadget<UTXOTreeConfig<C>, F> for UTXOTreeConfigGadget<F, C, CVar>
+{
+    type Leaf = UTXOVar<F, C, CVar>;
     type LeafDigest = FpVar<F>;
     type LeafInnerConverter = IdentityDigestConverter<FpVar<F>>;
     type InnerDigest = FpVar<F>;
-    type LeafHash = UTXOVarCRH<F>;
+    type LeafHash = UTXOVarCRH<F, C, CVar>;
     type TwoToOneHash = TwoToOneCRHGadget<F>;
 }
 
-impl<F: PrimeField + Absorb> SparseConfigGadget<UTXOTreeConfig<F>, F> for UTXOTreeConfigGadget<F> {
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    SparseConfigGadget<UTXOTreeConfig<C>, F> for UTXOTreeConfigGadget<F, C, CVar>
+{
     const HEIGHT: u64 = 32;
 }

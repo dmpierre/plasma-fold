@@ -13,7 +13,7 @@ use crate::primitives::schnorr::SchnorrGadget;
 
 use super::{PublicKey, Signature};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PublicKeyVar<
     C: CurveGroup<BaseField: PrimeField + Absorb>,
     CVar: CurveVar<C, C::BaseField>,

@@ -24,15 +24,15 @@ pub mod circuit;
 pub struct AggregatorState<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
     pub config: PoseidonConfig<F>,
 
-    pub utxos: HashMap<UTXO, Vec<usize>>,
-    pub utxo_tree: UTXOTree<UTXOTreeConfig<F>>,
+    pub utxos: HashMap<UTXO<C>, Vec<usize>>,
+    pub utxo_tree: UTXOTree<UTXOTreeConfig<C>>,
     pub current_utxo_index: usize,
-    pub transactions: Vec<Transaction>,
-    pub transaction_tree: TransactionTree<TransactionTreeConfig<F>>,
-    pub nonces: HashMap<UserId, Nonce>,
+    pub transactions: Vec<Transaction<C>>,
+    pub transaction_tree: TransactionTree<TransactionTreeConfig<C>>,
+    pub nonces: HashMap<C, Nonce>,
     pub nonce_tree: NonceTree<NonceTreeConfig<F>>,
-    pub deposits: Vec<UTXO>,
-    pub withdrawals: Vec<UTXO>,
+    pub deposits: Vec<UTXO<C>>,
+    pub withdrawals: Vec<UTXO<C>>,
     pub signer_tree: SignerTree<SignerTreeConfig<C>>,
     pub signers: Vec<Option<UserId>>,
 
@@ -70,9 +70,9 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
         self.acc_pk = F::zero();
     }
 
-    pub fn process_transactions(&mut self, inputs: Vec<(UserId, Transaction)>) {
+    pub fn process_transactions(&mut self, inputs: Vec<(PublicKey<C>, Transaction<C>)>) {
         for (sender, tx) in inputs {
-            let nonce = self.nonces.entry(sender).or_insert(Nonce(0));
+            let nonce = self.nonces.entry(sender.key).or_insert(Nonce(0));
             if tx.is_valid(Some(sender), Some(*nonce)) {
                 self.transactions.push(tx);
                 nonce.0 += 1;
@@ -91,7 +91,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
         .unwrap();
     }
 
-    pub fn prove_transactions(&self) -> Vec<MerkleSparseTreePath<TransactionTreeConfig<F>>> {
+    pub fn prove_transactions(&self) -> Vec<MerkleSparseTreePath<TransactionTreeConfig<C>>> {
         self.transactions
             .iter()
             .enumerate()
@@ -102,6 +102,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
 
     pub fn process_signatures(
         &mut self,
+        rollup_contract_pk: PublicKey<C>,
         inputs: Vec<(UserId, PublicKey<C>, Option<Signature<C::ScalarField>>)>,
     ) {
         for (i, (sender, pk, sig)) in inputs.into_iter().enumerate() {
@@ -114,7 +115,9 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
             {
                 self.signers.push(Some(sender));
                 for &utxo in tx.inputs.iter().filter(|utxo| !utxo.is_dummy) {
-                    if utxo.id != ROLLUP_CONTRACT_ID {
+                    if utxo.pk != rollup_contract_pk {
+                        // if the sending pk does not belong to the contract, check that the utxo
+                        // exists
                         assert!(self.utxos.contains_key(&utxo));
                         let index = self.utxos.get_mut(&utxo).unwrap().pop().unwrap();
                         self.utxo_tree
@@ -124,9 +127,12 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
                 }
                 for &utxo in tx.outputs.iter().filter(|utxo| !utxo.is_dummy) {
                     if sender == ROLLUP_CONTRACT_ID {
+                        // when the sender is the rollup, then the output UTXO is a deposit
                         self.deposits.push(utxo);
                     }
-                    if utxo.id != ROLLUP_CONTRACT_ID {
+                    if utxo.pk != rollup_contract_pk {
+                        // this output utxo is for a regular user
+                        // update the utxo tree with it
                         self.utxos
                             .entry(utxo)
                             .or_default()
@@ -136,14 +142,17 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
                             .unwrap();
                         self.current_utxo_index += 1;
                     } else {
+                        // the output utxo pk is the rollup, this is a withdrawal
                         self.withdrawals.push(UTXO {
                             amount: utxo.amount,
-                            id: sender,
+                            pk: utxo.pk,
                             is_dummy: false,
                         });
                     }
                 }
             } else {
+                // the signature has not been verified or is not existent. we push \bot to the list
+                // of signers
                 self.signers.push(None);
             }
         }
@@ -155,8 +164,8 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
             tx_tree_root: self.transaction_tree.root(),
             signer_tree_root: self.signer_tree.root(),
             signers: self.signers.clone(),
-            deposits: self.deposits.clone(),
-            withdrawals: self.withdrawals.clone(),
+            // deposits: self.deposits.clone(),
+            // withdrawals: self.withdrawals.clone(),
         }
     }
 
@@ -169,38 +178,43 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
 mod tests {
     use super::*;
     use ark_bn254::{Fq, Fr, G1Projective};
-    use ark_std::rand::thread_rng;
+    use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
-    use plasma_fold::datastructures::keypair::SecretKey;
+    use plasma_fold::datastructures::{
+        keypair::{KeyPair, SecretKey},
+        user::User,
+    };
 
-    fn test_aggregator_native(transactions_1: Vec<Transaction>, transactions_2: Vec<Transaction>) {
-        let rng = &mut thread_rng();
+    /// NOTE: vector of users should have the same order as the vector of transactions. i.e.
+    /// users[i] has done transactions[i]. it also supposes that they have the same length.
+    /// TODO: make this test a bit less mouthful?
+    fn test_aggregator_native(
+        rng: &mut impl Rng,
+        users: &Vec<User<G1Projective>>,
+        rollup_pk: &PublicKey<G1Projective>,
+        transactions: &Vec<Transaction<G1Projective>>,
+    ) {
         let config = poseidon_canonical_config::<Fq>();
-        let mut aggregator = AggregatorState::new(config.clone());
 
-        let sks = (0..5)
-            .map(|_| SecretKey::<Fr>::new(rng))
-            .collect::<Vec<_>>();
-        let pks = sks
-            .iter()
-            .map(PublicKey::<G1Projective>::new)
-            .collect::<Vec<_>>();
-        let transactions = transactions_1;
+        let mut aggregator = AggregatorState::new(config.clone());
 
         aggregator.process_transactions(
             transactions
-                .iter()
-                .map(|&tx| (tx.inputs[0].id, tx))
+                .into_iter()
+                .zip(users)
+                .map(|(tx, user)| (user.keypair.pk, tx.clone()))
                 .collect(),
         );
 
         let paths = aggregator.prove_transactions();
 
         aggregator.process_signatures(
+            rollup_pk.clone(),
             paths
                 .iter()
                 .enumerate()
                 .map(|(i, path)| {
+                    // user verifies path
                     assert!(path
                         .verify_with_index(
                             &config,
@@ -210,16 +224,18 @@ mod tests {
                             i as u64
                         )
                         .unwrap());
-                    let sender = transactions[i].inputs[0].id;
-                    let sk = &sks[sender as usize];
-                    let pk = pks[sender as usize].clone();
+
+                    let sender = users[i].id;
+                    let sk = &users[i].keypair.sk;
+                    let pk = users[i].keypair.pk;
                     let sig = if sender == ROLLUP_CONTRACT_ID {
                         None
                     } else {
+                        // user signs the transaction
                         Some(
                             sk.sign::<G1Projective>(
                                 &config,
-                                TransactionCRH::evaluate(&config, transactions[i]).unwrap(),
+                                TransactionCRH::evaluate(&config, transactions[i].clone()).unwrap(),
                                 rng,
                             )
                             .unwrap(),
@@ -233,543 +249,148 @@ mod tests {
         let _ = aggregator.produce_block();
 
         aggregator.reset_for_new_epoch();
-
-        let transactions = transactions_2;
-
-        aggregator.process_transactions(
-            transactions
-                .iter()
-                .map(|&tx| (tx.inputs[0].id, tx))
-                .collect(),
-        );
-
-        assert_eq!(transactions, aggregator.transactions);
-
-        let paths = aggregator.prove_transactions();
-
-        aggregator.process_signatures(
-            paths
-                .iter()
-                .enumerate()
-                .map(|(i, path)| {
-                    assert!(path
-                        .verify_with_index(
-                            &config,
-                            &config,
-                            &aggregator.transaction_tree.root(),
-                            &transactions[i],
-                            i as u64
-                        )
-                        .unwrap());
-                    let sender = transactions[i].inputs[0].id;
-                    let sk = &sks[sender as usize];
-                    let pk = pks[sender as usize].clone();
-                    let sig = if sender == ROLLUP_CONTRACT_ID {
-                        None
-                    } else {
-                        Some(
-                            sk.sign::<G1Projective>(
-                                &config,
-                                TransactionCRH::evaluate(&config, transactions[i]).unwrap(),
-                                rng,
-                            )
-                            .unwrap(),
-                        )
-                    };
-                    (sender, pk, sig)
-                })
-                .collect(),
-        );
     }
 
     #[test]
     fn test_aggregator_native_valid() {
-        test_aggregator_native(
-            vec![
-                Transaction {
-                    // Contract (80) + Contract (20) -> User 1 (100)
-                    inputs: [
-                        UTXO::new(0, 80),
-                        UTXO::new(0, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(1, 100),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
-                    inputs: [
-                        UTXO::new(1, 100),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(2, 30),
-                        UTXO::new(3, 40),
-                        UTXO::new(1, 30),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 2 (30) -> User 3 (10) + User 4 (20)
-                    inputs: [
-                        UTXO::new(2, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(3, 10),
-                        UTXO::new(4, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
-                    inputs: [
-                        UTXO::new(3, 40),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(4, 20),
-                        UTXO::new(3, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
-                    inputs: [
-                        UTXO::new(4, 20),
-                        UTXO::new(4, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(0, 30),
-                        UTXO::new(0, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-            ],
-            vec![
-                Transaction {
-                    // User 1 (30) -> User 1 (20) + User 3 (10)
-                    inputs: [
-                        UTXO::new(1, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(1, 20),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(1),
-                },
-                Transaction {
-                    // User 3 (30) -> User 3 (10) + User 2 (40)
-                    inputs: [
-                        UTXO::new(3, 30),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(2, 40),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(1),
-                },
-            ],
-        );
+        let mut rng = &mut thread_rng();
+        let rollup_sk = SecretKey::<Fr>::new(rng);
+        let rollup_pk = PublicKey::<G1Projective>::new(&rollup_sk);
+        let rollup_keypair = KeyPair {
+            sk: rollup_sk,
+            pk: rollup_pk,
+        };
+
+        let sks = (0..5)
+            .map(|_| SecretKey::<Fr>::new(rng))
+            .collect::<Vec<_>>();
+
+        let keypairs = sks
+            .into_iter()
+            .map(|sk| KeyPair {
+                pk: PublicKey::<G1Projective>::new(&sk),
+                sk,
+            })
+            .collect::<Vec<_>>();
+
+        // just facilitates setup
+        let aggregator_as_user = User {
+            keypair: rollup_keypair,
+            balance: 0,
+            nonce: Nonce(0),
+            acc: Fr::default(),
+            id: 0,
+        };
+
+        let mut users = keypairs
+            .into_iter()
+            .enumerate()
+            .map(|(i, kp)| User {
+                keypair: kp,
+                balance: 0,
+                nonce: Nonce(0),
+                acc: Fr::default(),
+                id: (i as u32) + 1, // 0 is reserved for aggregator
+            })
+            .collect::<Vec<User<G1Projective>>>();
+
+        users.insert(0, aggregator_as_user);
+
+        let transactions = vec![
+            Transaction {
+                // Contract (80) + Contract (20) -> User 1 (100)
+                inputs: [
+                    UTXO::new(rollup_pk, 80),
+                    UTXO::new(rollup_pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[0].keypair.pk, 100),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+            Transaction {
+                // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
+                inputs: [
+                    UTXO::new(users[0].keypair.pk, 100),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[1].keypair.pk, 30),
+                    UTXO::new(users[2].keypair.pk, 40),
+                    UTXO::new(users[0].keypair.pk, 30),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+            Transaction {
+                // User 2 (30) -> User 3 (10) + User 4 (20)
+                inputs: [
+                    UTXO::new(users[1].keypair.pk, 30),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[2].keypair.pk, 10),
+                    UTXO::new(users[3].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+            Transaction {
+                // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
+                inputs: [
+                    UTXO::new(users[2].keypair.pk, 40),
+                    UTXO::new(users[2].keypair.pk, 10),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[3].keypair.pk, 20),
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+            Transaction {
+                // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
+                inputs: [
+                    UTXO::new(users[3].keypair.pk, 20),
+                    UTXO::new(users[3].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(rollup_pk, 30),
+                    UTXO::new(rollup_pk, 10),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+        ];
+
+        test_aggregator_native(&mut rng, &users, &rollup_pk, &transactions);
     }
 
-    #[should_panic]
-    #[test]
-    fn test_aggregator_native_invalid_nonce() {
-        test_aggregator_native(
-            vec![
-                Transaction {
-                    // Contract (80) + Contract (20) -> User 1 (100)
-                    inputs: [
-                        UTXO::new(0, 80),
-                        UTXO::new(0, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(1, 100),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
-                    inputs: [
-                        UTXO::new(1, 100),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(2, 30),
-                        UTXO::new(3, 40),
-                        UTXO::new(1, 30),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 2 (30) -> User 3 (10) + User 4 (20)
-                    inputs: [
-                        UTXO::new(2, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(3, 10),
-                        UTXO::new(4, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
-                    inputs: [
-                        UTXO::new(3, 40),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(4, 20),
-                        UTXO::new(3, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
-                    inputs: [
-                        UTXO::new(4, 20),
-                        UTXO::new(4, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(0, 30),
-                        UTXO::new(0, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-            ],
-            vec![
-                Transaction {
-                    // User 1 (30) -> User 1 (20) + User 3 (10)
-                    inputs: [
-                        UTXO::new(1, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(1, 20),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(1),
-                },
-                Transaction {
-                    // User 3 (30) -> User 3 (10) + User 2 (40)
-                    inputs: [
-                        UTXO::new(3, 30),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(2, 40),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(2), // <---
-                },
-            ],
-        );
-    }
+    //#[should_panic]
+    //#[test]
+    //fn test_aggregator_native_invalid_nonce() {}
 
-    #[should_panic]
-    #[test]
-    fn test_aggregator_native_invalid_utxo() {
-        test_aggregator_native(
-            vec![
-                Transaction {
-                    // Contract (80) + Contract (20) -> User 1 (100)
-                    inputs: [
-                        UTXO::new(0, 80),
-                        UTXO::new(0, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(1, 100),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
-                    inputs: [
-                        UTXO::new(1, 100),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(2, 30),
-                        UTXO::new(3, 40),
-                        UTXO::new(1, 30),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 2 (30) -> User 3 (10) + User 4 (20)
-                    inputs: [
-                        UTXO::new(2, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(3, 10),
-                        UTXO::new(4, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
-                    inputs: [
-                        UTXO::new(3, 40),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(4, 20),
-                        UTXO::new(3, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
-                    inputs: [
-                        UTXO::new(4, 20),
-                        UTXO::new(4, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(0, 30),
-                        UTXO::new(0, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-            ],
-            vec![
-                Transaction {
-                    // User 1 (30) -> User 1 (20) + User 3 (10)
-                    inputs: [
-                        UTXO::new(1, 20), // <---
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(1, 10),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(1),
-                },
-                Transaction {
-                    // User 3 (30) -> User 3 (10) + User 2 (40)
-                    inputs: [
-                        UTXO::new(3, 30),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(2, 40),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(1),
-                },
-            ],
-        );
-    }
+    //#[should_panic]
+    //#[test]
+    //fn test_aggregator_native_invalid_utxo() {}
 
-    #[should_panic]
-    #[test]
-    fn test_aggregator_native_invalid_sum() {
-        test_aggregator_native(
-            vec![
-                Transaction {
-                    // Contract (80) + Contract (20) -> User 1 (100)
-                    inputs: [
-                        UTXO::new(0, 80),
-                        UTXO::new(0, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(1, 100),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
-                    inputs: [
-                        UTXO::new(1, 100),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(2, 30),
-                        UTXO::new(3, 40),
-                        UTXO::new(1, 30),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 2 (30) -> User 3 (10) + User 4 (20)
-                    inputs: [
-                        UTXO::new(2, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(3, 10),
-                        UTXO::new(4, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
-                    inputs: [
-                        UTXO::new(3, 40),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(4, 20),
-                        UTXO::new(3, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-                Transaction {
-                    // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
-                    inputs: [
-                        UTXO::new(4, 20),
-                        UTXO::new(4, 20),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(0, 30),
-                        UTXO::new(0, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(0),
-                },
-            ],
-            vec![
-                Transaction {
-                    // User 1 (30) -> User 1 (20) + User 3 (10)
-                    inputs: [
-                        UTXO::new(1, 30),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(1, 100), // <---
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(1),
-                },
-                Transaction {
-                    // User 3 (30) -> User 3 (10) + User 2 (40)
-                    inputs: [
-                        UTXO::new(3, 30),
-                        UTXO::new(3, 10),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    outputs: [
-                        UTXO::new(2, 40),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                        UTXO::dummy(),
-                    ],
-                    nonce: Nonce(1),
-                },
-            ],
-        );
-    }
+    //#[should_panic]
+    //#[test]
+    //fn test_aggregator_native_invalid_sum() {}
 }

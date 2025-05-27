@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use super::{noncemap::Nonce, user::UserId, utxo::UTXO, TX_IO_SIZE};
+use super::{keypair::PublicKey, noncemap::Nonce, utxo::UTXO, TX_IO_SIZE};
 use crate::{
     primitives::{
         crh::TransactionCRH,
@@ -10,22 +10,23 @@ use crate::{
 };
 use ark_crypto_primitives::{
     crh::{poseidon::TwoToOneCRH, CRHScheme},
-    merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
+    merkle_tree::{Config, IdentityDigestConverter},
     sponge::{poseidon::PoseidonConfig, Absorb},
     Error,
 };
+use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 
 pub mod constraints;
 
-#[derive(Clone, Debug, Copy, PartialEq)]
-pub struct Transaction {
-    pub inputs: [UTXO; TX_IO_SIZE],
-    pub outputs: [UTXO; TX_IO_SIZE],
+#[derive(Clone, Debug)]
+pub struct Transaction<C: CurveGroup> {
+    pub inputs: [UTXO<C>; TX_IO_SIZE],
+    pub outputs: [UTXO<C>; TX_IO_SIZE],
     pub nonce: Nonce,
 }
 
-impl Default for Transaction {
+impl<C: CurveGroup> Default for Transaction<C> {
     fn default() -> Self {
         Transaction {
             inputs: [UTXO::dummy(); TX_IO_SIZE],
@@ -35,55 +36,52 @@ impl Default for Transaction {
     }
 }
 
-impl Transaction {
-    pub fn get_hash<F: PrimeField + Absorb>(
-        &self,
-        parameters: &PoseidonConfig<F>,
-    ) -> Result<F, Error> {
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> Transaction<C> {
+    pub fn get_hash(&self, parameters: &PoseidonConfig<F>) -> Result<F, Error> {
         Ok(TransactionCRH::evaluate(parameters, self)?)
     }
 }
 
-impl<F: PrimeField> Into<Vec<F>> for &Transaction {
+impl<F: PrimeField, C: CurveGroup> Into<Vec<F>> for &Transaction<C> {
     fn into(self) -> Vec<F> {
         let mut arr = self
             .inputs
             .iter()
             .chain(&self.outputs)
-            .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.id)])
+            .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.is_dummy)])
             .collect::<Vec<_>>();
         arr.push(F::from(self.nonce.0));
         arr
     }
 }
 
-impl<F: PrimeField> Into<Vec<F>> for Transaction {
+impl<F: PrimeField, C: CurveGroup> Into<Vec<F>> for Transaction<C> {
     fn into(self) -> Vec<F> {
         let mut arr = self
             .inputs
             .iter()
             .chain(&self.outputs)
-            .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.id)])
+            .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.is_dummy)])
             .collect::<Vec<_>>();
         arr.push(F::from(self.nonce.0));
         arr
     }
 }
 
-impl AsRef<Transaction> for Transaction {
-    fn as_ref(&self) -> &Transaction {
+impl<C: CurveGroup> AsRef<Transaction<C>> for Transaction<C> {
+    fn as_ref(&self) -> &Transaction<C> {
         &self
     }
 }
 
-impl Transaction {
-    pub fn is_valid(&self, sender: Option<UserId>, nonce: Option<Nonce>) -> bool {
-        let sender = sender.unwrap_or(self.inputs[0].id);
+impl<C: CurveGroup> Transaction<C> {
+    pub fn is_valid(&self, sender: Option<PublicKey<C>>, nonce: Option<Nonce>) -> bool {
+        let sender = sender.unwrap_or(self.inputs[0].pk);
         if self
             .inputs
             .iter()
             .filter(|utxo| !utxo.is_dummy)
-            .any(|utxo| utxo.id != sender)
+            .any(|utxo| utxo.pk.key != sender.key)
         {
             return false;
         }
@@ -111,20 +109,22 @@ impl Transaction {
 
 pub type TransactionTree<P> = MerkleSparseTree<P>;
 
-pub struct TransactionTreeConfig<F: PrimeField> {
-    _f: PhantomData<F>,
+pub struct TransactionTreeConfig<C: CurveGroup> {
+    _c: PhantomData<C>,
 }
 
-impl<F: PrimeField + Absorb> Config for TransactionTreeConfig<F> {
-    type Leaf = Transaction;
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> Config for TransactionTreeConfig<C> {
+    type Leaf = Transaction<C>;
     type LeafDigest = F;
     type LeafInnerDigestConverter = IdentityDigestConverter<F>;
     type InnerDigest = F;
-    type LeafHash = TransactionCRH<F>;
+    type LeafHash = TransactionCRH<F, C>;
     type TwoToOneHash = TwoToOneCRH<F>;
 }
 
-impl<F: PrimeField + Absorb> SparseConfig for TransactionTreeConfig<F> {
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> SparseConfig
+    for TransactionTreeConfig<C>
+{
     const HEIGHT: u64 = TX_TREE_HEIGHT;
 }
 
@@ -136,7 +136,10 @@ pub mod tests {
     use super::{Transaction, TransactionTreeConfig};
     use crate::{
         datastructures::{
-            keypair::constraints::{PublicKeyVar, SignatureVar},
+            keypair::{
+                constraints::{PublicKeyVar, SignatureVar},
+                PublicKey,
+            },
             noncemap::Nonce,
             transaction::{
                 constraints::{TransactionTreeConfigGadget, TransactionVar},
@@ -157,7 +160,8 @@ pub mod tests {
         crh::{poseidon::constraints::CRHParametersVar, CRHSchemeGadget},
         merkle_tree::constraints::PathVar,
     };
-    use ark_grumpkin::{constraints::GVar, Projective};
+    use ark_grumpkin::constraints::GVar;
+    use ark_grumpkin::Projective;
     use ark_r1cs_std::{
         alloc::AllocVar,
         fields::{fp::FpVar, FieldVar},
@@ -166,7 +170,6 @@ pub mod tests {
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::rand::thread_rng;
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
-
     const W: usize = 32;
 
     #[test]
@@ -178,8 +181,8 @@ pub mod tests {
         // Build tx tree
         let transactions = (0..n_transactions)
             .map(|_| Transaction::default())
-            .collect::<Vec<Transaction>>();
-        let tx_tree = TransactionTree::<TransactionTreeConfig<Fr>>::new(
+            .collect::<Vec<Transaction<Projective>>>();
+        let tx_tree = TransactionTree::<TransactionTreeConfig<Projective>>::new(
             &pp,
             &pp,
             &BTreeMap::from_iter(
@@ -199,13 +202,16 @@ pub mod tests {
 
         // Initialize root, leaf and path as vars
         let tx_tree_root_var = FpVar::new_witness(cs.clone(), || Ok(tx_tree.root())).unwrap();
-        let tx_leaf_var = TransactionVar::new_witness(cs.clone(), || Ok(transactions[0])).unwrap();
-        let tx_path_var =
-            MerkleSparseTreePathVar::<_, _, TransactionTreeConfigGadget<_>>::new_witness(
-                cs.clone(),
-                || Ok(tx_path),
-            )
-            .unwrap();
+        let tx_leaf_var = TransactionVar::<Fr, Projective, GVar>::new_witness(cs.clone(), || {
+            Ok(transactions[0].clone())
+        })
+        .unwrap();
+        let tx_path_var = MerkleSparseTreePathVar::<
+            _,
+            _,
+            TransactionTreeConfigGadget<Fr, Projective, GVar>,
+        >::new_witness(cs.clone(), || Ok(tx_path))
+        .unwrap();
 
         // Verify membership
         tx_path_var
@@ -230,12 +236,12 @@ pub mod tests {
 
         // initialize user, tx, h(tx) and sign(tx)
         let user = User::<Projective>::new(rng, 1);
-        let tx = Transaction::default();
+        let tx = Transaction::<Projective>::default();
         let tx_hash = tx.get_hash(&pp).unwrap();
         let tx_signature = user.sign(&pp, tx_hash, &mut rng).unwrap();
 
         // alloc tx, h(tx), user.pubkey and sign(tx)
-        let tx_var = TransactionVar::new_witness(cs.clone(), || Ok(tx)).unwrap();
+        let tx_var = TransactionVar::<_, _, GVar>::new_witness(cs.clone(), || Ok(tx)).unwrap();
         let tx_hash_var = TransactionVarCRH::evaluate(&pp_var, &tx_var).unwrap();
         let pk_var =
             PublicKeyVar::<Projective, GVar>::new_witness(cs.clone(), || Ok(user.keypair.pk))
@@ -265,10 +271,10 @@ pub mod tests {
         let pp = poseidon_canonical_config();
         let empty_leaves = (0..n_transactions)
             .map(|_| Transaction::default())
-            .collect::<Vec<Transaction>>();
+            .collect::<Vec<Transaction<Projective>>>();
 
         // can not use blank, at least for now, since it requires LeafDigest::default();
-        let mut tx_tree = TransactionTree::<TransactionTreeConfig<Fr>>::new(
+        let mut tx_tree = TransactionTree::<TransactionTreeConfig<Projective>>::new(
             &pp,
             &pp,
             &&BTreeMap::from_iter(
@@ -283,11 +289,11 @@ pub mod tests {
         // initialize transactions received by the aggregator
         let transactions = (0..n_transactions)
             .map(|i| Transaction {
-                inputs: [UTXO::new(0, 10); TX_IO_SIZE],
-                outputs: [UTXO::new(0, 10); TX_IO_SIZE],
+                inputs: [UTXO::new(PublicKey::default(), 10); TX_IO_SIZE],
+                outputs: [UTXO::new(PublicKey::default(), 10); TX_IO_SIZE],
                 nonce: Nonce(i),
             })
-            .collect::<Vec<Transaction>>();
+            .collect::<Vec<Transaction<Projective>>>();
 
         // build the tree incrementally and store intermediary roots
         let mut update_proofs = Vec::with_capacity(transactions.len());
@@ -306,12 +312,12 @@ pub mod tests {
         let pp_var = CRHParametersVar::new_constant(cs.clone(), &pp).unwrap();
         let n_update_proofs = update_proofs.len();
         for (tx_update, prev_root, new_root, tx, idx) in update_proofs {
-            let update_var =
-                MerkleSparseTreeTwoPathsVar::<_, _, TransactionTreeConfigGadget<_>>::new_witness(
-                    cs.clone(),
-                    || Ok(tx_update),
-                )
-                .unwrap();
+            let update_var = MerkleSparseTreeTwoPathsVar::<
+                _,
+                _,
+                TransactionTreeConfigGadget<Fr, Projective, GVar>,
+            >::new_witness(cs.clone(), || Ok(tx_update))
+            .unwrap();
             let prev_root_var = FpVar::new_witness(cs.clone(), || Ok(prev_root)).unwrap();
             let new_root_var = FpVar::new_witness(cs.clone(), || Ok(new_root)).unwrap();
             let tx_var = TransactionVar::new_witness(cs.clone(), || Ok(tx)).unwrap();

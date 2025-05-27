@@ -727,22 +727,26 @@ fn gen_empty_hashes<
 
 #[cfg(test)]
 mod test {
-    use crate::datastructures::utxo::{UTXOTreeConfig, UTXO};
+    use crate::datastructures::{
+        keypair::PublicKey,
+        utxo::{UTXOTreeConfig, UTXO},
+    };
 
     use super::*;
 
     use ark_bn254::Fr;
     use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
     use ark_ff::Zero;
+    use ark_grumpkin::Projective;
     use ark_std::collections::BTreeMap;
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 
-    type UTXOMerkleTree = MerkleSparseTree<UTXOTreeConfig<Fr>>;
+    type UTXOMerkleTree = MerkleSparseTree<UTXOTreeConfig<Projective>>;
 
     fn generate_merkle_tree_and_test_membership(
         leaf_hash_params: &PoseidonConfig<Fr>,
         two_to_one_hash_params: &PoseidonConfig<Fr>,
-        leaves: &BTreeMap<u64, UTXO>,
+        leaves: &BTreeMap<u64, UTXO<Projective>>,
     ) {
         let tree = UTXOMerkleTree::new(leaf_hash_params, two_to_one_hash_params, leaves).unwrap();
         let root = tree.root();
@@ -762,14 +766,17 @@ mod test {
     #[test]
     fn good_root_membership_test() {
         let pp = poseidon_canonical_config();
-        let mut leaves: BTreeMap<u64, UTXO> = BTreeMap::new();
+        let mut leaves: BTreeMap<u64, UTXO<Projective>> = BTreeMap::new();
         for i in 1..10u8 {
-            leaves.insert(i as u64, UTXO::new(i.into(), i.into()));
+            leaves.insert(i as u64, UTXO::new(PublicKey::default(), i.into()));
         }
         generate_merkle_tree_and_test_membership(&pp, &pp, &leaves);
-        let mut leaves: BTreeMap<u64, UTXO> = BTreeMap::new();
+        let mut leaves: BTreeMap<u64, UTXO<Projective>> = BTreeMap::new();
         for i in 1..100u8 {
-            leaves.insert(i as u64, UTXO::new(i.into(), i.into()));
+            leaves.insert(
+                i as u64,
+                UTXO::<Projective>::new(PublicKey::default(), i.into()),
+            );
         }
         generate_merkle_tree_and_test_membership(&pp, &pp, &leaves);
     }
@@ -777,7 +784,7 @@ mod test {
     fn generate_merkle_tree_with_bad_root_and_test_membership(
         leaf_hash_params: &PoseidonConfig<Fr>,
         two_to_one_hash_params: &PoseidonConfig<Fr>,
-        leaves: &BTreeMap<u64, UTXO>,
+        leaves: &BTreeMap<u64, UTXO<Projective>>,
     ) {
         let tree = UTXOMerkleTree::new(leaf_hash_params, two_to_one_hash_params, leaves).unwrap();
         let root = Fr::zero();
@@ -796,9 +803,9 @@ mod test {
     #[test]
     fn bad_root_membership_test() {
         let pp = poseidon_canonical_config::<Fr>();
-        let mut leaves: BTreeMap<u64, UTXO> = BTreeMap::new();
+        let mut leaves: BTreeMap<u64, UTXO<Projective>> = BTreeMap::new();
         for i in 1..100u8 {
-            leaves.insert(i as u64, UTXO::new(i.into(), i.into()));
+            leaves.insert(i as u64, UTXO::new(PublicKey::default(), i.into()));
         }
         generate_merkle_tree_with_bad_root_and_test_membership(&pp, &pp, &leaves);
     }
@@ -806,8 +813,8 @@ mod test {
     fn generate_merkle_tree_and_test_update(
         leaf_hash_params: &PoseidonConfig<Fr>,
         two_to_one_hash_params: &PoseidonConfig<Fr>,
-        old_leaves: &BTreeMap<u64, UTXO>,
-        new_leaves: &BTreeMap<u64, UTXO>,
+        old_leaves: &BTreeMap<u64, UTXO<Projective>>,
+        new_leaves: &BTreeMap<u64, UTXO<Projective>>,
     ) {
         let mut tree =
             UTXOMerkleTree::new(leaf_hash_params, two_to_one_hash_params, old_leaves).unwrap();
@@ -906,20 +913,13 @@ mod test {
     #[test]
     fn good_root_update_test() {
         let pp = poseidon_canonical_config::<Fr>();
-        let mut old_leaves: BTreeMap<u64, UTXO> = BTreeMap::new();
+        let mut old_leaves: BTreeMap<u64, UTXO<Projective>> = BTreeMap::new();
         for i in 1..10u8 {
-            old_leaves.insert(
-                i as u64,
-                UTXO::new(i.into(), i.into()),
-
-            );
+            old_leaves.insert(i as u64, UTXO::new(PublicKey::default(), i.into()));
         }
-        let mut new_leaves: BTreeMap<u64, UTXO> = BTreeMap::new();
+        let mut new_leaves: BTreeMap<u64, UTXO<Projective>> = BTreeMap::new();
         for i in 1..20u8 {
-            new_leaves.insert(
-                i as u64,
-                UTXO::new(i.into(), (i * 3).into()),
-            );
+            new_leaves.insert(i as u64, UTXO::new(PublicKey::default(), (i * 3).into()));
         }
         generate_merkle_tree_and_test_update(&pp, &pp, &old_leaves, &new_leaves);
     }
