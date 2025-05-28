@@ -52,6 +52,8 @@ impl<F: PrimeField, C: CurveGroup<BaseField = F>> Into<Vec<F>> for &Transaction<
             .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.is_dummy)])
             .collect::<Vec<_>>();
         arr.push(F::from(self.nonce.0));
+        // the `is_valid` method checks, in-circuit, that the public key for the first utxo is the
+        // same for all the following utxos in the transaction
         let pk = self.inputs[0].pk.key.into_affine();
         let (x, y) = pk.xy().unwrap_or_else(|| (F::ZERO, F::ZERO));
         arr.push(x);
