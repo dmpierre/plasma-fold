@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn test_aggregator_native_valid() {
         let mut rng = &mut thread_rng();
-        let n_users = 5; // including aggregator
+        let n_users = 5; // includes aggregator
         let (config, mut aggregator, users) = setup(rng, n_users);
         let rollup_pk = users[0].keypair.pk;
 
@@ -532,7 +532,7 @@ mod tests {
     fn test_aggregator_native_invalid_nonce() {
         // testing whether providing an invalid nonce makes the aggregator fail
         let mut rng = &mut thread_rng();
-        let n_users = 4;
+        let n_users = 4; // includes aggregator
         let (config, mut aggregator, users) = setup(rng, n_users);
         let rollup_pk = users[0].keypair.pk;
 
@@ -603,7 +603,7 @@ mod tests {
     fn test_aggregator_native_invalid_utxo() {
         // testing whether providing an invalid utxo makes the aggregator fail
         let mut rng = &mut thread_rng();
-        let n_users = 4;
+        let n_users = 4; // includes aggregator
         let (config, mut aggregator, users) = setup(rng, n_users);
         let rollup_pk = users[0].keypair.pk;
 
@@ -669,7 +669,74 @@ mod tests {
         );
     }
 
-    //#[should_panic]
-    //#[test]
-    //fn test_aggregator_native_invalid_sum() {}
+    #[should_panic]
+    #[test]
+    fn test_aggregator_native_invalid_sum() {
+        // testing whether providing an invalid utxo makes the aggregator fail
+        let mut rng = &mut thread_rng();
+        let n_users = 4;
+        let (config, mut aggregator, users) = setup(rng, n_users);
+        let rollup_pk = users[0].keypair.pk;
+
+        let transactions = vec![
+            Transaction {
+                // Contract (80) + Contract (20) -> User 1 (100)
+                inputs: [
+                    UTXO::new(users[0].keypair.pk, 80),
+                    UTXO::new(users[0].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[1].keypair.pk, 100),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+            Transaction {
+                // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
+                inputs: [
+                    // NOTE: Incorrect utxo amounts, InvalidAmounts
+                    UTXO::new(users[1].keypair.pk, 100),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::new(users[3].keypair.pk, 10),
+                    UTXO::new(users[1].keypair.pk, 10),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+            Transaction {
+                // User 2 (30) -> User 3 (10)
+                inputs: [
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[3].keypair.pk, 10),
+                    UTXO::new(users[3].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+        ];
+
+        test_aggregator_native(
+            &mut rng,
+            &config,
+            &mut aggregator,
+            &users,
+            &rollup_pk,
+            &transactions,
+        );
+    }
 }
