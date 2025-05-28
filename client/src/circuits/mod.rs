@@ -16,7 +16,8 @@ use plasma_fold::{
         },
     },
     primitives::{
-        accumulator::constraints::Sha256AccumulatorVar, crh::constraints::BlockVarCRH,
+        accumulator::constraints::{PoseidonAccumulatorVar, Sha256AccumulatorVar},
+        crh::constraints::{BlockVarCRH, TransactionVarCRH},
         sparsemt::constraints::MerkleSparseTreePathVar,
     },
 };
@@ -52,7 +53,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         cs: ConstraintSystemRef<F>,
         z_i: Vec<FpVar<F>>,
         aux: UserAux<F, C, CVar>,
-    ) -> Result<(), SynthesisError> {
+    ) -> Result<Vec<FpVar<F>>, SynthesisError> {
         // z_i is (balance, nonce, acc)
         let pp = CRHParametersVar::new_constant(cs.clone(), self.pp.clone())?;
         let (mut balance_t_plus_1, mut nonce_t_plus_1, mut acc_t_plus_1) =
@@ -60,10 +61,20 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
 
         // compute block hash and update accumulator value
         let block_hash = BlockVarCRH::evaluate(&pp, &aux.block)?;
-        acc_t_plus_1 = Sha256AccumulatorVar::update(acc_t_plus_1, block_hash)?;
+        acc_t_plus_1 = PoseidonAccumulatorVar::update(&pp, &acc_t_plus_1, &block_hash)?;
 
         let pos = FpVar::new_constant(cs.clone(), F::from(-1))?;
 
-        Ok(())
+        // TODO: enforce j > pos
+
+        // check that tx is in tx tree
+        let tx = aux.transaction;
+        let tx_inclusion_proof = aux.tx_inclusion_proof;
+        let tx_tree_root = aux.block.tx_tree_root;
+
+        // TODO: does not enforce index consistency, should be ok?
+        tx_inclusion_proof.check_membership(cs, &pp, &pp, &tx_tree_root, &tx)?;
+
+        Ok([acc_t_plus_1].to_vec())
     }
 }
