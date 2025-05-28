@@ -10,4 +10,6 @@ pub enum AggregatorError {
     UTXOError,
     #[error("Invalid utxo tree update")]
     UTXOTreeUpdateError,
+    #[error("Non-existing utxo")]
+    UTXONonExisting,
 }

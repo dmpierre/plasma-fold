@@ -130,7 +130,9 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
                     if utxo.pk != rollup_contract_pk {
                         // if the sending pk does not belong to the contract, check that the utxo
                         // exists
-                        assert!(self.utxos.contains_key(&utxo));
+                        if !self.utxos.contains_key(&utxo) {
+                            return Err(AggregatorError::UTXONonExisting);
+                        };
 
                         let index = self
                             .utxos
@@ -528,6 +530,7 @@ mod tests {
     #[should_panic]
     #[test]
     fn test_aggregator_native_invalid_nonce() {
+        // testing whether providing an invalid nonce makes the aggregator fail
         let mut rng = &mut thread_rng();
         let n_users = 4;
         let (config, mut aggregator, users) = setup(rng, n_users);
@@ -564,6 +567,7 @@ mod tests {
                     UTXO::new(users[1].keypair.pk, 30),
                     UTXO::dummy(),
                 ],
+                // NOTE: Incorrect nonce, InvalidNonce
                 nonce: Nonce(42),
             },
             Transaction {
@@ -576,7 +580,7 @@ mod tests {
                 ],
                 outputs: [
                     UTXO::new(users[3].keypair.pk, 10),
-                    UTXO::dummy(),
+                    UTXO::new(users[3].keypair.pk, 20),
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
@@ -594,9 +598,76 @@ mod tests {
         );
     }
 
-    //#[should_panic]
-    //#[test]
-    //fn test_aggregator_native_invalid_utxo() {}
+    #[should_panic]
+    #[test]
+    fn test_aggregator_native_invalid_utxo() {
+        // testing whether providing an invalid utxo makes the aggregator fail
+        let mut rng = &mut thread_rng();
+        let n_users = 4;
+        let (config, mut aggregator, users) = setup(rng, n_users);
+        let rollup_pk = users[0].keypair.pk;
+
+        let transactions = vec![
+            Transaction {
+                // Contract (80) + Contract (20) -> User 1 (100)
+                inputs: [
+                    UTXO::new(users[0].keypair.pk, 80),
+                    UTXO::new(users[0].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[1].keypair.pk, 100),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+            Transaction {
+                // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
+                inputs: [
+                    // NOTE: Incorrect utxo, UTXONonExisting
+                    UTXO::new(users[1].keypair.pk, 110),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::new(users[3].keypair.pk, 40),
+                    UTXO::new(users[1].keypair.pk, 40),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+            Transaction {
+                // User 2 (30) -> User 3 (10)
+                inputs: [
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[3].keypair.pk, 10),
+                    UTXO::new(users[3].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+        ];
+
+        test_aggregator_native(
+            &mut rng,
+            &config,
+            &mut aggregator,
+            &users,
+            &rollup_pk,
+            &transactions,
+        );
+    }
 
     //#[should_panic]
     //#[test]
