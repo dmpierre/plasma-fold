@@ -19,7 +19,7 @@ use ark_std::borrow::Borrow;
 
 use crate::{
     datastructures::{
-        keypair::constraints::PublicKeyVar, noncemap::constraints::NonceVar, user::UserIdVar,
+        keypair::constraints::PublicKeyVar, noncemap::constraints::NonceVar,
         utxo::constraints::UTXOVar, TX_IO_SIZE,
     },
     primitives::{crh::constraints::TransactionVarCRH, sparsemt::constraints::SparseConfigGadget},
@@ -28,10 +28,11 @@ use crate::{
 
 use super::{Transaction, TransactionTreeConfig};
 
-impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>> Into<Vec<FpVar<F>>>
-    for &TransactionVar<F, C, CVar>
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    TryInto<Vec<FpVar<F>>> for &TransactionVar<F, C, CVar>
 {
-    fn into(self) -> Vec<FpVar<F>> {
+    type Error = SynthesisError;
+    fn try_into(self) -> Result<Vec<FpVar<F>>, SynthesisError> {
         let mut arr = self
             .inputs
             .iter()
@@ -39,7 +40,10 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
             .flat_map(|utxo| [utxo.amount.clone(), utxo.is_dummy.clone().into()])
             .collect::<Vec<_>>();
         arr.push(self.nonce.clone());
-        arr
+        let pk = self.inputs[0].pk.clone();
+        let fp = pk.key.to_constraint_field()?;
+        arr = [arr, fp].concat();
+        Ok(arr)
     }
 }
 

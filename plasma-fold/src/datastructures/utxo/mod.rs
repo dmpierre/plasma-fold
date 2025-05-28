@@ -5,7 +5,7 @@ use std::{
 
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
-    merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
+    merkle_tree::{Config, IdentityDigestConverter},
     sponge::Absorb,
 };
 use ark_ec::CurveGroup;
@@ -16,7 +16,7 @@ use crate::primitives::{
     sparsemt::{MerkleSparseTree, SparseConfig},
 };
 
-use super::{keypair::PublicKey, user::UserId};
+use super::keypair::PublicKey;
 
 pub mod constraints;
 
@@ -79,4 +79,3 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> Config for UTXOTreeCo
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> SparseConfig for UTXOTreeConfig<C> {
     const HEIGHT: u64 = 32;
 }
-

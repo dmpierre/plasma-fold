@@ -50,7 +50,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
-        let elements: Vec<FpVar<F>> = input.into();
+        let elements: Vec<FpVar<F>> = input.try_into()?;
         Ok(CRHGadget::evaluate(parameters, &elements)?)
     }
 }

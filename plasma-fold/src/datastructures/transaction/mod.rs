@@ -15,7 +15,7 @@ use ark_crypto_primitives::{
     sponge::{poseidon::PoseidonConfig, Absorb},
     Error,
 };
-use ark_ec::CurveGroup;
+use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::PrimeField;
 
 pub mod constraints;
@@ -43,7 +43,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> Transaction<C> {
     }
 }
 
-impl<F: PrimeField, C: CurveGroup> Into<Vec<F>> for &Transaction<C> {
+impl<F: PrimeField, C: CurveGroup<BaseField = F>> Into<Vec<F>> for &Transaction<C> {
     fn into(self) -> Vec<F> {
         let mut arr = self
             .inputs
@@ -52,6 +52,11 @@ impl<F: PrimeField, C: CurveGroup> Into<Vec<F>> for &Transaction<C> {
             .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.is_dummy)])
             .collect::<Vec<_>>();
         arr.push(F::from(self.nonce.0));
+        let pk = self.inputs[0].pk.key.into_affine();
+        let (x, y) = pk.xy().unwrap_or_else(|| (F::ZERO, F::ZERO));
+        arr.push(x);
+        arr.push(y);
+        arr.push(pk.is_zero().into());
         arr
     }
 }
@@ -166,16 +171,12 @@ pub mod tests {
         },
     };
     use ark_bn254::Fr;
-    use ark_crypto_primitives::{
-        crh::{poseidon::constraints::CRHParametersVar, CRHSchemeGadget},
-        merkle_tree::constraints::PathVar,
-    };
+    use ark_crypto_primitives::crh::{poseidon::constraints::CRHParametersVar, CRHSchemeGadget};
     use ark_grumpkin::constraints::GVar;
     use ark_grumpkin::Projective;
     use ark_r1cs_std::{
         alloc::AllocVar,
         fields::{fp::FpVar, FieldVar},
-        R1CSVar,
     };
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::rand::thread_rng;
@@ -216,6 +217,7 @@ pub mod tests {
             Ok(transactions[0].clone())
         })
         .unwrap();
+
         let tx_path_var = MerkleSparseTreePathVar::<
             _,
             _,
