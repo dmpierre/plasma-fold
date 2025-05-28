@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use super::{keypair::PublicKey, noncemap::Nonce, utxo::UTXO, TX_IO_SIZE};
 use crate::{
+    errors::TransactionError,
     primitives::{
         crh::TransactionCRH,
         sparsemt::{MerkleSparseTree, SparseConfig},
@@ -75,7 +76,11 @@ impl<C: CurveGroup> AsRef<Transaction<C>> for Transaction<C> {
 }
 
 impl<C: CurveGroup> Transaction<C> {
-    pub fn is_valid(&self, sender: Option<PublicKey<C>>, nonce: Option<Nonce>) -> bool {
+    pub fn is_valid(
+        &self,
+        sender: Option<PublicKey<C>>,
+        nonce: Option<Nonce>,
+    ) -> Result<(), TransactionError> {
         let sender = sender.unwrap_or(self.inputs[0].pk);
         if self
             .inputs
@@ -83,8 +88,9 @@ impl<C: CurveGroup> Transaction<C> {
             .filter(|utxo| !utxo.is_dummy)
             .any(|utxo| utxo.pk.key != sender.key)
         {
-            return false;
+            return Err(TransactionError::InvalidPublicKey);
         }
+
         if self
             .inputs
             .iter()
@@ -98,12 +104,16 @@ impl<C: CurveGroup> Transaction<C> {
                 .map(|utxo| utxo.amount)
                 .sum::<u64>()
         {
-            return false;
+            return Err(TransactionError::InvalidAmounts);
         }
+
         if nonce.is_some() && nonce != Some(self.nonce) {
-            return false;
+            return Err(TransactionError::InvalidNonce(
+                nonce.unwrap().0, // we can unwrap safely, because of `is_some`
+                self.nonce.0,
+            ));
         }
-        true
+        Ok(())
     }
 }
 

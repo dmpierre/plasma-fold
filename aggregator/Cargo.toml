@@ -15,3 +15,4 @@ ark-grumpkin = { workspace = true, features = ["r1cs"] }
 ark-std = { workspace = true } 
 ark-serialize = { workspace = true } 
 ark-ec = { workspace = true } 
+thiserror = { workspace = true } 

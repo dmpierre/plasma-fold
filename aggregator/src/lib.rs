@@ -3,9 +3,11 @@ use std::collections::{BTreeMap, HashMap};
 use ark_crypto_primitives::{
     crh::CRHScheme,
     sponge::{poseidon::PoseidonConfig, Absorb},
+    Error,
 };
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
+use errors::AggregatorError;
 use plasma_fold::{
     datastructures::{
         block::Block,
@@ -16,10 +18,12 @@ use plasma_fold::{
         user::{UserId, ROLLUP_CONTRACT_ID},
         utxo::{UTXOTree, UTXOTreeConfig, UTXO},
     },
+    errors::TransactionError,
     primitives::{crh::TransactionCRH, sparsemt::MerkleSparseTreePath},
 };
 
 pub mod circuit;
+pub mod errors;
 
 pub struct AggregatorState<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
     pub config: PoseidonConfig<F>,
@@ -70,13 +74,15 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
         self.acc_pk = F::zero();
     }
 
-    pub fn process_transactions(&mut self, inputs: Vec<(PublicKey<C>, Transaction<C>)>) {
+    pub fn process_transactions(
+        &mut self,
+        inputs: Vec<(PublicKey<C>, Transaction<C>)>,
+    ) -> Result<(), TransactionError> {
         for (sender, tx) in inputs {
             let nonce = self.nonces.entry(sender.key).or_insert(Nonce(0));
-            if tx.is_valid(Some(sender), Some(*nonce)) {
-                self.transactions.push(tx);
-                nonce.0 += 1;
-            }
+            tx.is_valid(Some(sender), Some(*nonce))?;
+            self.transactions.push(tx);
+            nonce.0 += 1;
         }
         self.transaction_tree = TransactionTree::new(
             &self.config,
@@ -88,29 +94,35 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
                     .map(|(i, tx)| (i as u64, tx.clone())),
             ),
         )
-        .unwrap();
+        .map_err(|_| TransactionError::TransactionTreeFailure)?;
+
+        Ok(())
     }
 
-    pub fn prove_transactions(&self) -> Vec<MerkleSparseTreePath<TransactionTreeConfig<C>>> {
+    pub fn prove_transactions(
+        &self,
+    ) -> Result<Vec<MerkleSparseTreePath<TransactionTreeConfig<C>>>, Error> {
         self.transactions
             .iter()
             .enumerate()
             .map(|(i, tx)| self.transaction_tree.generate_proof(i as u64, tx))
             .collect::<Result<Vec<_>, _>>()
-            .unwrap()
     }
 
     pub fn process_signatures(
         &mut self,
         rollup_contract_pk: PublicKey<C>,
         inputs: Vec<(UserId, PublicKey<C>, Option<Signature<C::ScalarField>>)>,
-    ) {
+    ) -> Result<(), AggregatorError> {
         for (i, (sender, pk, sig)) in inputs.into_iter().enumerate() {
             let tx = &self.transactions[i];
-            let hash = TransactionCRH::evaluate(&self.config, tx).unwrap();
+
+            let hash = TransactionCRH::evaluate(&self.config, tx)
+                .map_err(|_| AggregatorError::TransactionCRHError)?;
+
             if pk
                 .verify_signature(&self.config, hash, &sig.unwrap_or_default())
-                .unwrap()
+                .map_err(|_| AggregatorError::SignatureError)?
                 || sender == ROLLUP_CONTRACT_ID
             {
                 self.signers.push(Some(sender));
@@ -119,10 +131,17 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
                         // if the sending pk does not belong to the contract, check that the utxo
                         // exists
                         assert!(self.utxos.contains_key(&utxo));
-                        let index = self.utxos.get_mut(&utxo).unwrap().pop().unwrap();
+
+                        let index = self
+                            .utxos
+                            .get_mut(&utxo)
+                            .unwrap()
+                            .pop()
+                            .ok_or(AggregatorError::UTXOError)?;
+
                         self.utxo_tree
                             .update_and_prove(index as u64, &UTXO::dummy())
-                            .unwrap();
+                            .map_err(|_| AggregatorError::UTXOTreeUpdateError)?;
                     }
                 }
                 for &utxo in tx.outputs.iter().filter(|utxo| !utxo.is_dummy) {
@@ -139,7 +158,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
                             .push(self.current_utxo_index);
                         self.utxo_tree
                             .update_and_prove(self.current_utxo_index as u64, &utxo)
-                            .unwrap();
+                            .map_err(|_| AggregatorError::UTXOTreeUpdateError)?;
                         self.current_utxo_index += 1;
                     } else {
                         // the output utxo pk is the rollup, this is a withdrawal
@@ -156,6 +175,8 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
                 self.signers.push(None);
             }
         }
+
+        Ok(())
     }
 
     pub fn produce_block(&self) -> Block<F> {
@@ -190,70 +211,78 @@ mod tests {
     /// TODO: make this test a bit less mouthful?
     fn test_aggregator_native(
         rng: &mut impl Rng,
+        config: &PoseidonConfig<Fq>,
+        aggregator: &mut AggregatorState<Fq, G1Projective>,
         users: &Vec<User<G1Projective>>,
         rollup_pk: &PublicKey<G1Projective>,
         transactions: &Vec<Transaction<G1Projective>>,
     ) {
-        let config = poseidon_canonical_config::<Fq>();
+        aggregator
+            .process_transactions(
+                transactions
+                    .into_iter()
+                    .zip(users)
+                    .map(|(tx, user)| (user.keypair.pk, tx.clone()))
+                    .collect(),
+            )
+            .unwrap();
 
-        let mut aggregator = AggregatorState::new(config.clone());
+        let paths = aggregator.prove_transactions().unwrap();
 
-        aggregator.process_transactions(
-            transactions
-                .into_iter()
-                .zip(users)
-                .map(|(tx, user)| (user.keypair.pk, tx.clone()))
-                .collect(),
-        );
+        let inputs = paths
+            .iter()
+            .enumerate()
+            .map(|(i, path)| {
+                // user verifies path
+                let tx = &transactions[i];
 
-        let paths = aggregator.prove_transactions();
+                let tx_in_tx_tree = path.verify_with_index(
+                    &config,
+                    &config,
+                    &aggregator.transaction_tree.root(),
+                    tx,
+                    i as u64,
+                );
 
-        aggregator.process_signatures(
-            rollup_pk.clone(),
-            paths
-                .iter()
-                .enumerate()
-                .map(|(i, path)| {
-                    // user verifies path
-                    assert!(path
-                        .verify_with_index(
+                assert!(tx_in_tx_tree.is_ok());
+
+                let sender = users[i].id;
+                let sk = &users[i].keypair.sk;
+                let pk = users[i].keypair.pk;
+                let sig = if sender == ROLLUP_CONTRACT_ID {
+                    None
+                } else {
+                    // user signs the transaction
+                    Some(
+                        sk.sign::<G1Projective>(
                             &config,
-                            &config,
-                            &aggregator.transaction_tree.root(),
-                            &transactions[i],
-                            i as u64
+                            TransactionCRH::evaluate(&config, transactions[i].clone()).unwrap(),
+                            rng,
                         )
-                        .unwrap());
+                        .unwrap(),
+                    )
+                };
+                (sender, pk, sig)
+            })
+            .collect();
 
-                    let sender = users[i].id;
-                    let sk = &users[i].keypair.sk;
-                    let pk = users[i].keypair.pk;
-                    let sig = if sender == ROLLUP_CONTRACT_ID {
-                        None
-                    } else {
-                        // user signs the transaction
-                        Some(
-                            sk.sign::<G1Projective>(
-                                &config,
-                                TransactionCRH::evaluate(&config, transactions[i].clone()).unwrap(),
-                                rng,
-                            )
-                            .unwrap(),
-                        )
-                    };
-                    (sender, pk, sig)
-                })
-                .collect(),
-        );
+        aggregator
+            .process_signatures(rollup_pk.clone(), inputs)
+            .unwrap();
 
         let _ = aggregator.produce_block();
 
         aggregator.reset_for_new_epoch();
     }
 
-    #[test]
-    fn test_aggregator_native_valid() {
-        let mut rng = &mut thread_rng();
+    fn setup(
+        rng: &mut impl Rng,
+        n_users: usize,
+    ) -> (
+        PoseidonConfig<Fq>,
+        AggregatorState<Fq, G1Projective>,
+        Vec<User<G1Projective>>,
+    ) {
         let rollup_sk = SecretKey::<Fr>::new(rng);
         let rollup_pk = PublicKey::<G1Projective>::new(&rollup_sk);
         let rollup_keypair = KeyPair {
@@ -261,7 +290,15 @@ mod tests {
             pk: rollup_pk,
         };
 
-        let sks = (0..5)
+        let aggregator_as_user = User {
+            keypair: rollup_keypair,
+            balance: 0,
+            nonce: Nonce(0),
+            acc: Fr::default(),
+            id: 0,
+        };
+
+        let sks = (1..n_users)
             .map(|_| SecretKey::<Fr>::new(rng))
             .collect::<Vec<_>>();
 
@@ -272,15 +309,6 @@ mod tests {
                 sk,
             })
             .collect::<Vec<_>>();
-
-        // just facilitates setup
-        let aggregator_as_user = User {
-            keypair: rollup_keypair,
-            balance: 0,
-            nonce: Nonce(0),
-            acc: Fr::default(),
-            id: 0,
-        };
 
         let mut users = keypairs
             .into_iter()
@@ -296,17 +324,30 @@ mod tests {
 
         users.insert(0, aggregator_as_user);
 
+        let config = poseidon_canonical_config::<Fq>();
+        let aggregator = AggregatorState::new(config.clone());
+
+        (config, aggregator, users)
+    }
+
+    #[test]
+    fn test_aggregator_native_valid() {
+        let mut rng = &mut thread_rng();
+        let n_users = 5; // including aggregator
+        let (config, mut aggregator, users) = setup(rng, n_users);
+        let rollup_pk = users[0].keypair.pk;
+
         let transactions = vec![
             Transaction {
                 // Contract (80) + Contract (20) -> User 1 (100)
                 inputs: [
-                    UTXO::new(rollup_pk, 80),
-                    UTXO::new(rollup_pk, 20),
+                    UTXO::new(users[0].keypair.pk, 80),
+                    UTXO::new(users[0].keypair.pk, 20),
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
                 outputs: [
-                    UTXO::new(users[0].keypair.pk, 100),
+                    UTXO::new(users[1].keypair.pk, 100),
                     UTXO::dummy(),
                     UTXO::dummy(),
                     UTXO::dummy(),
@@ -316,15 +357,15 @@ mod tests {
             Transaction {
                 // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
                 inputs: [
-                    UTXO::new(users[0].keypair.pk, 100),
+                    UTXO::new(users[1].keypair.pk, 100),
                     UTXO::dummy(),
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
                 outputs: [
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::new(users[3].keypair.pk, 40),
                     UTXO::new(users[1].keypair.pk, 30),
-                    UTXO::new(users[2].keypair.pk, 40),
-                    UTXO::new(users[0].keypair.pk, 30),
                     UTXO::dummy(),
                 ],
                 nonce: Nonce(0),
@@ -332,14 +373,14 @@ mod tests {
             Transaction {
                 // User 2 (30) -> User 3 (10) + User 4 (20)
                 inputs: [
-                    UTXO::new(users[1].keypair.pk, 30),
+                    UTXO::new(users[2].keypair.pk, 30),
                     UTXO::dummy(),
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
                 outputs: [
-                    UTXO::new(users[2].keypair.pk, 10),
-                    UTXO::new(users[3].keypair.pk, 20),
+                    UTXO::new(users[3].keypair.pk, 10),
+                    UTXO::new(users[4].keypair.pk, 20),
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
@@ -348,14 +389,14 @@ mod tests {
             Transaction {
                 // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
                 inputs: [
-                    UTXO::new(users[2].keypair.pk, 40),
-                    UTXO::new(users[2].keypair.pk, 10),
+                    UTXO::new(users[3].keypair.pk, 40),
+                    UTXO::new(users[3].keypair.pk, 10),
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
                 outputs: [
-                    UTXO::new(users[3].keypair.pk, 20),
-                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::new(users[4].keypair.pk, 20),
+                    UTXO::new(users[3].keypair.pk, 30),
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
@@ -364,14 +405,14 @@ mod tests {
             Transaction {
                 // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
                 inputs: [
-                    UTXO::new(users[3].keypair.pk, 20),
-                    UTXO::new(users[3].keypair.pk, 20),
+                    UTXO::new(users[4].keypair.pk, 20),
+                    UTXO::new(users[4].keypair.pk, 20),
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
                 outputs: [
-                    UTXO::new(rollup_pk, 30),
-                    UTXO::new(rollup_pk, 10),
+                    UTXO::new(users[0].keypair.pk, 30),
+                    UTXO::new(users[0].keypair.pk, 10),
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
@@ -379,12 +420,179 @@ mod tests {
             },
         ];
 
-        test_aggregator_native(&mut rng, &users, &rollup_pk, &transactions);
+        test_aggregator_native(
+            &mut rng,
+            &config,
+            &mut aggregator,
+            &users,
+            &rollup_pk,
+            &transactions,
+        );
+
+        aggregator.reset_for_new_epoch();
+
+        // reset aggregator and make another batch of transactions
+        let transactions = vec![
+            Transaction {
+                // Contract (80) + Contract (20) -> User 1 (100)
+                inputs: [
+                    UTXO::new(users[0].keypair.pk, 80),
+                    UTXO::new(users[0].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[1].keypair.pk, 100),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(1),
+            },
+            Transaction {
+                // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
+                inputs: [
+                    UTXO::new(users[1].keypair.pk, 100),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::new(users[3].keypair.pk, 40),
+                    UTXO::new(users[1].keypair.pk, 30),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(1),
+            },
+            Transaction {
+                // User 2 (30) -> User 3 (10) + User 4 (20)
+                inputs: [
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[3].keypair.pk, 10),
+                    UTXO::new(users[4].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(1),
+            },
+            Transaction {
+                // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
+                inputs: [
+                    UTXO::new(users[3].keypair.pk, 40),
+                    UTXO::new(users[3].keypair.pk, 10),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[4].keypair.pk, 20),
+                    UTXO::new(users[3].keypair.pk, 30),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(1),
+            },
+            Transaction {
+                // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
+                inputs: [
+                    UTXO::new(users[4].keypair.pk, 20),
+                    UTXO::new(users[4].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[0].keypair.pk, 30),
+                    UTXO::new(users[0].keypair.pk, 10),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(1),
+            },
+        ];
+
+        test_aggregator_native(
+            &mut rng,
+            &config,
+            &mut aggregator,
+            &users,
+            &rollup_pk,
+            &transactions,
+        );
     }
 
-    //#[should_panic]
-    //#[test]
-    //fn test_aggregator_native_invalid_nonce() {}
+    #[should_panic]
+    #[test]
+    fn test_aggregator_native_invalid_nonce() {
+        let mut rng = &mut thread_rng();
+        let n_users = 4;
+        let (config, mut aggregator, users) = setup(rng, n_users);
+        let rollup_pk = users[0].keypair.pk;
+
+        let transactions = vec![
+            Transaction {
+                // Contract (80) + Contract (20) -> User 1 (100)
+                inputs: [
+                    UTXO::new(users[0].keypair.pk, 80),
+                    UTXO::new(users[0].keypair.pk, 20),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[1].keypair.pk, 100),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+            Transaction {
+                // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
+                inputs: [
+                    UTXO::new(users[1].keypair.pk, 100),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::new(users[3].keypair.pk, 40),
+                    UTXO::new(users[1].keypair.pk, 30),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(42),
+            },
+            Transaction {
+                // User 2 (30) -> User 3 (10)
+                inputs: [
+                    UTXO::new(users[2].keypair.pk, 30),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                outputs: [
+                    UTXO::new(users[3].keypair.pk, 10),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                    UTXO::dummy(),
+                ],
+                nonce: Nonce(0),
+            },
+        ];
+
+        test_aggregator_native(
+            &mut rng,
+            &config,
+            &mut aggregator,
+            &users,
+            &rollup_pk,
+            &transactions,
+        );
+    }
 
     //#[should_panic]
     //#[test]
