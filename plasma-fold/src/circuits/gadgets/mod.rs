@@ -16,8 +16,6 @@ use std::path::PathBuf;
 use ark_crypto_primitives::merkle_tree::Config;
 use ark_ff::PrimeField;
 
-use crate::datastructures::user::UserIdVar;
-
 pub struct TreeGadgets<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> {
     _f: PhantomData<P>,
     _f1: PhantomData<F>,

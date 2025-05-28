@@ -105,30 +105,6 @@ impl<F: PrimeField + Absorb> CRHScheme for NonceCRH<F> {
     }
 }
 
-pub struct UserIdCRH<F: PrimeField> {
-    _f: PhantomData<F>,
-}
-
-impl<F: PrimeField + Absorb + From<UserId>> CRHScheme for UserIdCRH<F> {
-    type Input = [UserId];
-    type Output = F;
-    type Parameters = PoseidonConfig<F>;
-
-    fn setup<R: Rng>(_rng: &mut R) -> Result<Self::Parameters, Error> {
-        // automatic generation of parameters are not implemented yet
-        // therefore, the developers must specify the parameters themselves
-        unimplemented!()
-    }
-
-    fn evaluate<T: Borrow<Self::Input>>(
-        parameters: &Self::Parameters,
-        input: T,
-    ) -> Result<Self::Output, Error> {
-        let input = F::from(input.borrow()[0]);
-        Ok(CRH::evaluate(parameters, [input])?)
-    }
-}
-
 pub struct UTXOCRH<C: CurveGroup<BaseField: PrimeField + Absorb>> {
     _f: PhantomData<C>,
 }

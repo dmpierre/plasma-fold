@@ -13,11 +13,11 @@ use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar};
 
 use crate::datastructures::{
     block::constraints::BlockVar, keypair::constraints::PublicKeyVar,
-    noncemap::constraints::NonceVar, transaction::constraints::TransactionVar, user::UserIdVar,
+    noncemap::constraints::NonceVar, transaction::constraints::TransactionVar,
     utxo::constraints::UTXOVar,
 };
 
-use super::{BlockCRH, NonceCRH, PublicKeyCRH, TransactionCRH, UserIdCRH, UTXOCRH};
+use super::{BlockCRH, NonceCRH, PublicKeyCRH, TransactionCRH, UTXOCRH};
 
 pub struct TransactionVarCRH<F: PrimeField, C: CurveGroup, CVar: CurveVar<C, F>> {
     _f: PhantomData<F>,
@@ -89,23 +89,6 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>, CVar: CurveVar<C, C::BaseFie
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
         let key = input.key.to_constraint_field()?;
         Ok(CRHGadget::evaluate(parameters, &key)?)
-    }
-}
-
-pub struct UserIdVarCRH<F: PrimeField> {
-    _f: PhantomData<F>,
-}
-
-impl<F: PrimeField + Absorb> CRHSchemeGadget<UserIdCRH<F>, F> for UserIdVarCRH<F> {
-    type InputVar = [UserIdVar<F>];
-    type OutputVar = FpVar<F>;
-    type ParametersVar = CRHParametersVar<F>;
-
-    fn evaluate(
-        parameters: &Self::ParametersVar,
-        input: &Self::InputVar,
-    ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
-        CRHGadget::evaluate(parameters, input)
     }
 }
 

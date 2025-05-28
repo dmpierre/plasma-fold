@@ -1,16 +1,15 @@
 use std::marker::PhantomData;
 
 use crate::{
-    datastructures::user::UserId,
     primitives::{
-        crh::{PublicKeyCRH, UserIdCRH},
-        sparsemt::{MerkleSparseTree, MerkleSparseTreeTwoPaths, SparseConfig},
+        crh::PublicKeyCRH,
+        sparsemt::{MerkleSparseTree, SparseConfig},
     },
-    SIGNER_TREE_HEIGHT, TX_TREE_HEIGHT,
+    SIGNER_TREE_HEIGHT,
 };
 use ark_crypto_primitives::{
     crh::poseidon::TwoToOneCRH,
-    merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
+    merkle_tree::{Config, IdentityDigestConverter},
     sponge::Absorb,
 };
 use ark_ec::CurveGroup;

@@ -9,7 +9,7 @@ use ark_std::rand::Rng;
 use ark_std::UniformRand;
 
 use super::{
-    keypair::{KeyPair, PublicKey, Signature},
+    keypair::{KeyPair, Signature},
     noncemap::Nonce,
     transaction::Transaction,
 };
@@ -19,7 +19,6 @@ pub mod constraints;
 pub const ROLLUP_CONTRACT_ID: u32 = 0;
 
 pub type UserId = u32;
-pub type UserIdVar<F> = FpVar<F>;
 
 pub struct User<C: CurveGroup> {
     pub keypair: KeyPair<C>,
