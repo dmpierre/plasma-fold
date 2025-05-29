@@ -134,6 +134,7 @@ impl<F: PrimeField + Absorb> CRHSchemeGadget<BlockCRH<F>, F> for BlockVarCRH<F> 
                 input.utxo_tree_root.clone(),
                 input.tx_tree_root.clone(),
                 input.signer_tree_root.clone(),
+                input.number.clone(),
             ],
         )
     }

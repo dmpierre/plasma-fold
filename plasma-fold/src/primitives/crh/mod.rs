@@ -155,6 +155,7 @@ impl<F: PrimeField + Absorb> CRHScheme for BlockCRH<F> {
             block.utxo_tree_root,
             block.tx_tree_root,
             block.signer_tree_root,
+            block.number,
         ];
         Ok(CRH::evaluate(parameters, input)?)
     }

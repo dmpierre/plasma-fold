@@ -1,4 +1,3 @@
-use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
 
@@ -8,6 +7,7 @@ pub struct BlockVar<F: PrimeField> {
     pub utxo_tree_root: FpVar<F>,
     pub tx_tree_root: FpVar<F>,
     pub signer_tree_root: FpVar<F>,
+    pub number: FpVar<F>,
 }
 
 impl<F: PrimeField> AllocVar<Block<F>, F> for BlockVar<F> {
@@ -23,10 +23,12 @@ impl<F: PrimeField> AllocVar<Block<F>, F> for BlockVar<F> {
         let tx_tree_root = FpVar::new_variable(cs.clone(), || Ok(block.tx_tree_root), mode)?;
         let signer_tree_root =
             FpVar::new_variable(cs.clone(), || Ok(block.signer_tree_root), mode)?;
+        let number = FpVar::new_variable(cs.clone(), || Ok(block.number), mode)?;
         Ok(BlockVar {
             utxo_tree_root,
             tx_tree_root,
             signer_tree_root,
+            number,
         })
     }
 }

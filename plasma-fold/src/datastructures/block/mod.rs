@@ -13,6 +13,6 @@ pub struct Block<F: PrimeField> {
     pub signer_tree_root: F,
     // the list of signer ids
     pub signers: Vec<Option<u32>>,
-    // pub deposits: Vec<UTXO<C>>,
-    // pub withdrawals: Vec<UTXO<C>>,
+    pub number: F, // pub deposits: Vec<UTXO<C>>,
+                   // pub withdrawals: Vec<UTXO<C>>,
 }

@@ -39,7 +39,7 @@ pub struct AggregatorState<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>>
     pub withdrawals: Vec<UTXO<C>>,
     pub signer_tree: SignerTree<SignerTreeConfig<C>>,
     pub signers: Vec<Option<UserId>>,
-
+    pub block_number: F,
     pub acc_signer: F,
     pub acc_pk: F,
 }
@@ -56,6 +56,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
             nonce_tree: NonceTree::blank(&config, &config),
             signer_tree: SignerTree::blank(&config, &config),
             config,
+            block_number: F::zero(),
             deposits: vec![],
             withdrawals: vec![],
             signers: vec![],
@@ -187,8 +188,8 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
             tx_tree_root: self.transaction_tree.root(),
             signer_tree_root: self.signer_tree.root(),
             signers: self.signers.clone(),
-            // deposits: self.deposits.clone(),
-            // withdrawals: self.withdrawals.clone(),
+            number: self.block_number.clone(), // deposits: self.deposits.clone(),
+                                               // withdrawals: self.withdrawals.clone(),
         }
     }
 
