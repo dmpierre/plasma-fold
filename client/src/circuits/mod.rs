@@ -75,7 +75,8 @@ pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: C
     pub signer_pk_inclusion_proof:
         MerkleSparseTreePathVar<SignerTreeConfig<C>, F, SignerTreeConfigGadget<F, C, CVar>>,
     pub block: BlockVar<F>,
-    pub transaction: TransactionVar<F, C, CVar>,
+    // (transaction, transaction's index within the transaction tree)
+    pub transaction: (TransactionVar<F, C, CVar>, FpVar<F>),
     pub pk: PublicKeyVar<C, CVar>,
 }
 
@@ -107,17 +108,16 @@ impl<
         let pos = FpVar::new_constant(cs.clone(), F::from(-1))?;
 
         // check that tx is in tx tree
-        // TODO: does not enforce index consistency, should be ok?
-        aux.tx_inclusion_proof.check_membership(
-            cs.clone(),
+        aux.tx_inclusion_proof.check_membership_with_index(
             &self.pp,
             &self.pp,
             &aux.block.tx_tree_root,
-            &aux.transaction,
+            &aux.transaction.0,
+            &aux.transaction.1,
         )?;
 
         // check that tx signer is in the signer tree
-        let tx_signer = aux.transaction.get_signer();
+        let tx_signer = aux.transaction.0.get_signer();
         aux.signer_pk_inclusion_proof.check_membership(
             cs.clone(),
             &self.pp,
@@ -131,12 +131,12 @@ impl<
         nonce_t_plus_1 += &signer_is_user.into();
 
         // process transaction inputs and outputs
-        for input in aux.transaction.inputs {
+        for input in aux.transaction.0.inputs {
             input.pk.key.enforce_equal(&aux.pk.key)?;
             balance_t_plus_1 += &input.amount;
         }
 
-        for output in aux.transaction.outputs {
+        for output in aux.transaction.0.outputs {
             let receiver_is_user = output.pk.key.is_eq(&aux.pk.key)?;
             balance_t_plus_1 += output.amount * &receiver_is_user.into();
         }
