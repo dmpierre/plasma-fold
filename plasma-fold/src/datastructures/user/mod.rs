@@ -4,7 +4,6 @@ use ark_crypto_primitives::{
 };
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
-use ark_r1cs_std::fields::fp::FpVar;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 

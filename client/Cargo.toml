@@ -21,6 +21,7 @@ console_error_panic_hook = { version = "0.1.7", optional = true }
 ark-grumpkin = { workspace = true }
 ark-r1cs-std = { workspace = true }
 ark-relations = { workspace = true, default-features = false}
+folding-schemes = { workspace = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"
