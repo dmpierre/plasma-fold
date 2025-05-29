@@ -1,7 +1,10 @@
 // accumulate the block into the block accumulator (acc)
 //
 use ark_crypto_primitives::{
-    crh::{poseidon::constraints::CRHParametersVar, CRHSchemeGadget},
+    crh::{
+        poseidon::constraints::CRHParametersVar, CRHSchemeGadget, TwoToOneCRHScheme,
+        TwoToOneCRHSchemeGadget,
+    },
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ec::CurveGroup;
@@ -17,7 +20,7 @@ use plasma_fold::{
         },
     },
     primitives::{
-        accumulator::constraints::PoseidonAccumulatorVar, crh::constraints::BlockVarCRH,
+        accumulator::constraints::Accumulator, crh::constraints::BlockVarCRH,
         sparsemt::constraints::MerkleSparseTreePathVar,
     },
 };
@@ -26,10 +29,19 @@ use std::marker::PhantomData;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar};
 
-pub struct UserCircuit<F: PrimeField, C: CurveGroup, CVar: CurveVar<C, F>> {
+pub struct UserCircuit<
+    F: PrimeField,
+    C: CurveGroup,
+    CVar: CurveVar<C, F>,
+    H: TwoToOneCRHScheme,
+    T: TwoToOneCRHSchemeGadget<H, F>,
+    A: Accumulator<F, H, T>,
+> {
+    _a: PhantomData<A>,
     _f: PhantomData<F>,
     _c: PhantomData<C>,
     _cvar: PhantomData<CVar>,
+    acc_pp: T::ParametersVar, // public parameters for the accumulator might not be poseidon
     pp: PoseidonConfig<F>,
 }
 
@@ -46,8 +58,14 @@ pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: C
     pub pk: PublicKeyVar<C, CVar>,
 }
 
-impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
-    UserCircuit<F, C, CVar>
+impl<
+        F: PrimeField + Absorb,
+        C: CurveGroup<BaseField = F>,
+        CVar: CurveVar<C, F>,
+        H: TwoToOneCRHScheme,
+        T: TwoToOneCRHSchemeGadget<H, F>,
+        A: Accumulator<F, H, T>,
+    > UserCircuit<F, C, CVar, H, T, A>
 {
     pub fn update_balance(
         &self,
@@ -56,13 +74,14 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         aux: UserAux<F, C, CVar>,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
         // z_i is (balance, nonce, acc)
-        let pp = CRHParametersVar::new_constant(cs.clone(), self.pp.clone())?;
+        let pp = CRHParametersVar::new_constant(cs.clone(), &self.pp)?;
+
         let (mut balance_t_plus_1, mut nonce_t_plus_1, mut acc_t_plus_1) =
             (z_i[0].clone(), z_i[1].clone(), z_i[2].clone());
 
         // compute block hash and update accumulator value
         let block_hash = BlockVarCRH::evaluate(&pp, &aux.block)?;
-        acc_t_plus_1 = PoseidonAccumulatorVar::update(&pp, &acc_t_plus_1, &block_hash)?;
+        acc_t_plus_1 = A::update(&self.acc_pp, &acc_t_plus_1, &block_hash)?;
 
         // TODO: enforce j > pos
         let pos = FpVar::new_constant(cs.clone(), F::from(-1))?;
