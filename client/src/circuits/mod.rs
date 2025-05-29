@@ -175,7 +175,7 @@ impl<
         // set the new processed transaction index to the currently processed transaction
         // and set new block hash to the currently processed block
         prev_block_hash = block_hash;
-        prev_processed_tx_index = aux.transaction.1.clone() + FpVar::constant(F::one());
+        prev_processed_tx_index = &aux.transaction.1 + FpVar::constant(F::one());
         prev_block_number = aux.block.number;
 
         Ok([
