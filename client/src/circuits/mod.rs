@@ -1,14 +1,15 @@
 // accumulate the block into the block accumulator (acc)
-//
 use ark_crypto_primitives::{
     crh::{
         poseidon::constraints::CRHParametersVar, CRHSchemeGadget, TwoToOneCRHScheme,
         TwoToOneCRHSchemeGadget,
     },
-    sponge::{poseidon::PoseidonConfig, Absorb},
+    sponge::Absorb,
 };
 use ark_ec::CurveGroup;
+use ark_r1cs_std::{fields::FieldVar, prelude::Boolean};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use core::cmp::Ordering;
 use plasma_fold::{
     datastructures::{
         block::constraints::BlockVar,
@@ -20,14 +21,15 @@ use plasma_fold::{
         },
     },
     primitives::{
-        accumulator::constraints::Accumulator, crh::constraints::BlockVarCRH,
+        accumulator::constraints::Accumulator,
+        crh::constraints::{BlockVarCRH, PublicKeyVarCRH},
         sparsemt::constraints::MerkleSparseTreePathVar,
     },
 };
 use std::marker::PhantomData;
 
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar};
+use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, groups::CurveVar};
 
 pub struct UserCircuit<
     F: PrimeField + Absorb,
@@ -95,17 +97,46 @@ impl<
         z_i: Vec<FpVar<F>>,
         aux: UserAux<F, C, CVar>,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        // z_i is (balance, nonce, acc)
+        // z_i is (balance, nonce, pk, acc, n_processed_tx)
+        let (
+            mut balance_t_plus_1,
+            mut nonce_t_plus_1,
+            pk_hash,
+            mut acc_t_plus_1,
+            mut prev_block_hash,
+            mut prev_block_number,
+            mut prev_processed_tx_index,
+        ) = (
+            z_i[0].clone(),
+            z_i[1].clone(),
+            z_i[2].clone(),
+            z_i[3].clone(),
+            z_i[4].clone(),
+            z_i[5].clone(),
+            z_i[6].clone(),
+        );
 
-        let (mut balance_t_plus_1, mut nonce_t_plus_1, mut acc_t_plus_1) =
-            (z_i[0].clone(), z_i[1].clone(), z_i[2].clone());
+        // ensure correct pk is provided in aux inputs
+        let computed_pk_hash = PublicKeyVarCRH::evaluate(&self.pp, &aux.pk)?;
+        computed_pk_hash.enforce_equal(&pk_hash)?;
 
         // compute block hash and update accumulator value
         let block_hash = BlockVarCRH::evaluate(&self.pp, &aux.block)?;
         acc_t_plus_1 = A::update(&self.acc_pp, &acc_t_plus_1, &block_hash)?;
 
-        // TODO: enforce j > pos
-        let pos = FpVar::new_constant(cs.clone(), F::from(-1))?;
+        // ensure the current processed block number is equal or greater than the previous block
+        let _ = &prev_block_number.enforce_cmp(&aux.block.number, Ordering::Less, true)?;
+
+        // if prev_block_hash == currently_processed_block -> currently processed tx index should
+        // be equal or greater than the next authorized tx index
+        let processing_same_block = block_hash.is_eq(&prev_block_hash)?;
+        let prev_tx_index_is_lower =
+            &prev_processed_tx_index.is_cmp(&aux.transaction.1, Ordering::Less, true)?;
+
+        // if we are processing the same block, the previously processed transaction index should
+        // be lower than the currently processed transaction
+        prev_tx_index_is_lower
+            .conditional_enforce_equal(&Boolean::Constant(true), &processing_same_block)?;
 
         // check that tx is in tx tree
         aux.tx_inclusion_proof.check_membership_with_index(
@@ -141,6 +172,21 @@ impl<
             balance_t_plus_1 += output.amount * &receiver_is_user.into();
         }
 
-        Ok([balance_t_plus_1, nonce_t_plus_1, acc_t_plus_1].to_vec())
+        // set the new processed transaction index to the currently processed transaction
+        // and set new block hash to the currently processed block
+        prev_block_hash = block_hash;
+        prev_processed_tx_index = aux.transaction.1.clone() + FpVar::constant(F::one());
+        prev_block_number = aux.block.number;
+
+        Ok([
+            balance_t_plus_1,
+            nonce_t_plus_1,
+            pk_hash,
+            acc_t_plus_1,
+            prev_block_hash,
+            prev_block_number,
+            prev_processed_tx_index,
+        ]
+        .to_vec())
     }
 }
