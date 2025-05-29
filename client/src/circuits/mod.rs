@@ -82,6 +82,14 @@ pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: C
     pub pk: PublicKeyVar<C, CVar>,
 }
 
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
+    UserAux<F, C, CVar>
+{
+    pub fn new() -> Self {
+        todo!()
+    }
+}
+
 impl<
         F: PrimeField + Absorb,
         C: CurveGroup<BaseField = F>,
