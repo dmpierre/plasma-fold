@@ -9,6 +9,7 @@ use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use plasma_fold::{
     datastructures::{
         block::constraints::BlockVar,
+        keypair::constraints::PublicKeyVar,
         signerlist::{constraints::SignerTreeConfigGadget, SignerTreeConfig},
         transaction::{
             constraints::{TransactionTreeConfigGadget, TransactionVar},
@@ -16,8 +17,7 @@ use plasma_fold::{
         },
     },
     primitives::{
-        accumulator::constraints::{PoseidonAccumulatorVar, Sha256AccumulatorVar},
-        crh::constraints::{BlockVarCRH, TransactionVarCRH},
+        accumulator::constraints::PoseidonAccumulatorVar, crh::constraints::BlockVarCRH,
         sparsemt::constraints::MerkleSparseTreePathVar,
     },
 };
@@ -43,6 +43,7 @@ pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: C
         MerkleSparseTreePathVar<SignerTreeConfig<C>, F, SignerTreeConfigGadget<F, C, CVar>>,
     pub block: BlockVar<F>,
     pub transaction: TransactionVar<F, C, CVar>,
+    pub pk: PublicKeyVar<C, CVar>,
 }
 
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
@@ -63,18 +64,44 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         let block_hash = BlockVarCRH::evaluate(&pp, &aux.block)?;
         acc_t_plus_1 = PoseidonAccumulatorVar::update(&pp, &acc_t_plus_1, &block_hash)?;
 
+        // TODO: enforce j > pos
         let pos = FpVar::new_constant(cs.clone(), F::from(-1))?;
 
-        // TODO: enforce j > pos
-
         // check that tx is in tx tree
-        let tx = aux.transaction;
-        let tx_inclusion_proof = aux.tx_inclusion_proof;
-        let tx_tree_root = aux.block.tx_tree_root;
-
         // TODO: does not enforce index consistency, should be ok?
-        tx_inclusion_proof.check_membership(cs, &pp, &pp, &tx_tree_root, &tx)?;
+        aux.tx_inclusion_proof.check_membership(
+            cs.clone(),
+            &pp,
+            &pp,
+            &aux.block.tx_tree_root,
+            &aux.transaction,
+        )?;
 
-        Ok([acc_t_plus_1].to_vec())
+        // check that tx signer is in the signer tree
+        let tx_signer = aux.transaction.get_signer();
+        aux.signer_pk_inclusion_proof.check_membership(
+            cs.clone(),
+            &pp,
+            &pp,
+            &aux.block.signer_tree_root,
+            &tx_signer,
+        )?;
+
+        // increment user nonce by 1 if the tx signer is the user
+        let signer_is_user = aux.pk.key.is_eq(&tx_signer.key)?;
+        nonce_t_plus_1 += &signer_is_user.into();
+
+        // process transaction inputs and outputs
+        for input in aux.transaction.inputs {
+            input.pk.key.enforce_equal(&aux.pk.key)?;
+            balance_t_plus_1 += &input.amount;
+        }
+
+        for output in aux.transaction.outputs {
+            let receiver_is_user = output.pk.key.is_eq(&aux.pk.key)?;
+            balance_t_plus_1 += output.amount * &receiver_is_user.into();
+        }
+
+        Ok([balance_t_plus_1, nonce_t_plus_1, acc_t_plus_1].to_vec())
     }
 }

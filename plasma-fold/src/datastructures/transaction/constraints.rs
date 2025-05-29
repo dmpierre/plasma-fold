@@ -53,9 +53,9 @@ pub struct TransactionVar<
     C: CurveGroup<BaseField = F>,
     CVar: CurveVar<C, F>,
 > {
-    inputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
-    outputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
-    nonce: FpVar<F>,
+    pub inputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
+    pub outputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
+    pub nonce: FpVar<F>,
 }
 
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
@@ -132,5 +132,9 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
             result &= self.nonce.is_eq(&nonce)?;
         }
         Ok(result)
+    }
+
+    pub fn get_signer(&self) -> PublicKeyVar<C, CVar> {
+        self.inputs[0].pk.clone()
     }
 }
