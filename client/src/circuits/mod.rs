@@ -171,6 +171,7 @@ impl<
         // ensure the current processed block number is equal or greater than the previous block
         let _ = &prev_block_number.enforce_cmp(&aux.block.number, Ordering::Less, true)?;
 
+        // TX PROCESSING
         // if prev_block_hash == currently_processed_block -> currently processed tx index should
         // be equal or greater than the next authorized tx index
         let processing_same_block = block_hash.is_eq(&prev_block_hash)?;
