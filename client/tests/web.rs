@@ -1,33 +1,35 @@
-use std::collections::BTreeMap;
-
 use ark_bn254::Fr;
-use ark_crypto_primitives::crh::poseidon::constraints::CRHParametersVar;
-use ark_crypto_primitives::crh::poseidon::constraints::TwoToOneCRHGadget;
-use ark_crypto_primitives::crh::poseidon::TwoToOneCRH;
-use ark_crypto_primitives::crh::CRHScheme;
+use ark_crypto_primitives::crh::{
+    poseidon::{
+        constraints::{CRHParametersVar, TwoToOneCRHGadget},
+        TwoToOneCRH,
+    },
+    CRHScheme,
+};
 use ark_ff::{AdditiveGroup, Field};
-use ark_grumpkin::constraints::GVar;
-use ark_grumpkin::Projective;
-use ark_r1cs_std::alloc::AllocVar;
-use ark_r1cs_std::fields::fp::FpVar;
-use ark_r1cs_std::R1CSVar;
+use ark_grumpkin::{constraints::GVar, Projective};
+use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
 use ark_relations::r1cs::ConstraintSystem;
 use ark_std::rand::thread_rng;
-use client::circuits::{UserAux, UserAuxVar, UserCircuit};
-use client::N_TX_PER_FOLD_STEP;
+use client::{
+    circuits::{UserAux, UserAuxVar, UserCircuit},
+    N_TX_PER_FOLD_STEP,
+};
 use folding_schemes::folding::traits::Dummy;
 use folding_schemes::transcript::poseidon::poseidon_canonical_config;
-use plasma_fold::datastructures::block::Block;
-use plasma_fold::datastructures::keypair::{KeyPair, PublicKey};
-use plasma_fold::datastructures::noncemap::Nonce;
-use plasma_fold::datastructures::signerlist::{SignerTree, SignerTreeConfig};
-use plasma_fold::datastructures::transaction::{
-    Transaction, TransactionTree, TransactionTreeConfig,
+use plasma_fold::{
+    datastructures::{
+        block::Block,
+        keypair::{KeyPair, PublicKey},
+        noncemap::Nonce,
+        signerlist::{SignerTree, SignerTreeConfig},
+        transaction::{Transaction, TransactionTree, TransactionTreeConfig},
+        user::User,
+        utxo::{UTXOTree, UTXOTreeConfig, UTXO},
+    },
+    primitives::{accumulator::constraints::PoseidonAccumulatorVar, crh::PublicKeyCRH},
 };
-use plasma_fold::datastructures::user::User;
-use plasma_fold::datastructures::utxo::{UTXOTree, UTXOTreeConfig, UTXO};
-use plasma_fold::primitives::accumulator::constraints::PoseidonAccumulatorVar;
-use plasma_fold::primitives::crh::PublicKeyCRH;
+use std::collections::BTreeMap;
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
