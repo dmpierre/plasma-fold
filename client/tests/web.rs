@@ -1,14 +1,10 @@
 use std::collections::BTreeMap;
 
 use ark_bn254::Fr;
+use ark_crypto_primitives::crh::poseidon::constraints::CRHParametersVar;
 use ark_crypto_primitives::crh::poseidon::constraints::TwoToOneCRHGadget;
 use ark_crypto_primitives::crh::poseidon::TwoToOneCRH;
-use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
-use ark_crypto_primitives::crh::sha256::Sha256;
 use ark_crypto_primitives::crh::CRHScheme;
-use ark_crypto_primitives::crh::{
-    poseidon::constraints::CRHParametersVar, sha256::constraints::UnitVar,
-};
 use ark_ff::{AdditiveGroup, Field};
 use ark_grumpkin::constraints::GVar;
 use ark_grumpkin::Projective;
@@ -17,9 +13,11 @@ use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::r1cs::ConstraintSystem;
 use ark_std::rand::thread_rng;
 use client::circuits::{UserAux, UserAuxVar, UserCircuit};
+use client::N_TX_PER_FOLD_STEP;
+use folding_schemes::folding::traits::Dummy;
 use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 use plasma_fold::datastructures::block::Block;
-use plasma_fold::datastructures::keypair::KeyPair;
+use plasma_fold::datastructures::keypair::{KeyPair, PublicKey};
 use plasma_fold::datastructures::noncemap::Nonce;
 use plasma_fold::datastructures::signerlist::{SignerTree, SignerTreeConfig};
 use plasma_fold::datastructures::transaction::{
@@ -33,6 +31,7 @@ use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
+// Generates user aux data for one correct transaction among N_TX_PER_FOLD_STEP
 pub fn generate_user_aux_data() -> UserAux<Fr, Projective> {
     let pp = poseidon_canonical_config();
     let mut rng = thread_rng();
@@ -47,14 +46,23 @@ pub fn generate_user_aux_data() -> UserAux<Fr, Projective> {
     signer_leaves.insert(user.id as u64, user.keypair.pk);
     let signer_tree =
         SignerTree::<SignerTreeConfig<Projective>>::new(&pp, &pp, &signer_leaves).unwrap();
+    let mut signer_pk_inclusion_proofs = Vec::new();
 
-    let signer_inclusion_proof = signer_tree
-        .generate_proof(user.id as u64, &user.keypair.pk)
-        .unwrap();
+    signer_pk_inclusion_proofs.push(
+        signer_tree
+            .generate_proof(user.id as u64, &user.keypair.pk)
+            .unwrap(),
+    );
+    for _ in 1..N_TX_PER_FOLD_STEP {
+        signer_pk_inclusion_proofs.push(
+            signer_tree
+                .generate_proof(0, &PublicKey::default())
+                .unwrap(),
+        );
+    }
 
-    // Build tx tree
-    let tx_tree_height = 10;
-    let n_transactions = (2 as usize).pow(tx_tree_height);
+    // Build tx tree, 10 transactions, with 1 not a dummy, made by user
+    let n_transactions = 10;
     let mut transactions = (0..n_transactions)
         .map(|_| Transaction::default())
         .collect::<Vec<Transaction<Projective>>>();
@@ -91,7 +99,21 @@ pub fn generate_user_aux_data() -> UserAux<Fr, Projective> {
     )
     .unwrap();
 
-    let tx_inclusion_proof = tx_tree.generate_proof(tx_index as u64, &tx).unwrap();
+    let mut transaction_inclusion_proofs = Vec::new();
+    transaction_inclusion_proofs.push(tx_tree.generate_proof(tx_index as u64, &tx).unwrap());
+    for _ in 1..N_TX_PER_FOLD_STEP {
+        transaction_inclusion_proofs.push(
+            tx_tree
+                .generate_proof(0 as u64, &Transaction::dummy(()))
+                .unwrap(),
+        );
+    }
+
+    let mut transactions = Vec::new();
+    transactions.push((tx, Fr::from(tx_index as u64)));
+    for _ in 1..N_TX_PER_FOLD_STEP {
+        transactions.push((Transaction::dummy(()), Fr::ZERO));
+    }
 
     let block = Block {
         utxo_tree_root,
@@ -102,10 +124,10 @@ pub fn generate_user_aux_data() -> UserAux<Fr, Projective> {
     };
 
     let user_aux = UserAux {
-        tx_inclusion_proof,
-        signer_pk_inclusion_proof: signer_inclusion_proof,
+        transaction_inclusion_proofs,
+        signer_pk_inclusion_proofs,
         block,
-        transaction: (tx, Fr::from(tx_index as u64)),
+        transactions,
         pk: user.keypair.pk,
     };
 
@@ -141,5 +163,6 @@ pub fn user_circuit_poseidon_n_constraints() {
     user_circuit
         .update_balance(cs.clone(), z_i, user_aux_var)
         .unwrap();
+    assert!(cs.is_satisfied().unwrap());
     console_log!("n constraints: {}", cs.num_constraints());
 }
