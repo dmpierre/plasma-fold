@@ -72,6 +72,7 @@ impl<
     }
 }
 
+#[derive(Clone)]
 pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
     pub transaction_inclusion_proofs: Vec<MerkleSparseTreePath<TransactionTreeConfig<C>>>,
     pub signer_pk_inclusion_proofs: Vec<MerkleSparseTreePath<SignerTreeConfig<C>>>,
@@ -213,9 +214,8 @@ impl<
             .zip(aux.signer_pk_inclusion_proofs)
         {
             // are we processing a dummy transaction? (dummy transactions are used to fill up the vector)
-            let transaction_hash = TransactionVarCRH::evaluate(&self.pp, &transaction)?;
-
             // if we are processing a dummy transaction, we do not enforce any of the conditions
+            let transaction_hash = TransactionVarCRH::evaluate(&self.pp, &transaction)?;
             let is_regular_transaction = transaction_hash.is_neq(&dummy_transaction_hash)?;
 
             // if prev_block_hash == currently_processed_block -> currently processed tx index should
@@ -270,10 +270,10 @@ impl<
 
             // if we process are not processing dummy transaction, set the prev processed tx index
             // to the current tx index
-            // (current_tx_index * 1) + (prev_processed_tx_index + 1) * 0;
-            prev_processed_tx_index = (transaction_index * &is_regular_transaction.clone().into())
-                + (prev_processed_tx_index + FpVar::constant(F::one()))
-                    * (FpVar::new_constant(cs.clone(), F::one())? - &is_regular_transaction.into());
+            prev_processed_tx_index = (FpVar::new_constant(cs.clone(), F::one())?
+                - &is_regular_transaction.clone().into())
+                * prev_processed_tx_index
+                + &is_regular_transaction.into() * transaction_index;
         }
 
         // set the new processed transaction index to the currently processed transaction

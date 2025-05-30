@@ -10,6 +10,7 @@ use ark_grumpkin::constraints::GVar;
 use ark_grumpkin::Projective;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::fields::fp::FpVar;
+use ark_r1cs_std::R1CSVar;
 use ark_relations::r1cs::ConstraintSystem;
 use ark_std::rand::thread_rng;
 use client::circuits::{UserAux, UserAuxVar, UserCircuit};
@@ -135,7 +136,7 @@ pub fn generate_user_aux_data() -> UserAux<Fr, Projective> {
 }
 
 #[wasm_bindgen_test]
-pub fn user_circuit_poseidon_n_constraints() {
+pub fn test_process_correct_send_transaction() {
     let user_aux = generate_user_aux_data();
     let pos_params = poseidon_canonical_config();
     let cs = ConstraintSystem::<Fr>::new_ref();
@@ -151,7 +152,7 @@ pub fn user_circuit_poseidon_n_constraints() {
     let mut z_i = Vec::<FpVar<Fr>>::new();
     let pk_hash = PublicKeyCRH::evaluate(&pos_params, user_aux.pk).unwrap();
 
-    z_i.push(FpVar::new_witness(cs.clone(), || Ok(Fr::ZERO)).unwrap());
+    z_i.push(FpVar::new_witness(cs.clone(), || Ok(Fr::from(1000 as u64))).unwrap());
     z_i.push(FpVar::new_witness(cs.clone(), || Ok(Fr::ZERO)).unwrap());
     z_i.push(FpVar::new_witness(cs.clone(), || Ok(pk_hash)).unwrap());
     z_i.push(FpVar::new_witness(cs.clone(), || Ok(Fr::ZERO)).unwrap());
@@ -159,10 +160,55 @@ pub fn user_circuit_poseidon_n_constraints() {
     z_i.push(FpVar::new_witness(cs.clone(), || Ok(Fr::ZERO)).unwrap());
     z_i.push(FpVar::new_witness(cs.clone(), || Ok(Fr::ZERO)).unwrap());
 
-    let user_aux_var = UserAuxVar::new_witness(cs.clone(), || Ok(user_aux)).unwrap();
-    user_circuit
-        .update_balance(cs.clone(), z_i, user_aux_var)
+    let user_aux_var = UserAuxVar::new_witness(cs.clone(), || Ok(user_aux.clone())).unwrap();
+    let new_state = user_circuit
+        .update_balance(cs.clone(), z_i.clone(), user_aux_var)
         .unwrap();
     assert!(cs.is_satisfied().unwrap());
+
+    // balance should be updated by transaction sent amount
+    let new_bal = new_state[0].clone();
+    assert_eq!(
+        new_bal.value().unwrap(),
+        z_i[0].value().unwrap() - Fr::from(100)
+    );
+
+    // nonce should be incremented by one
+    let new_nonce = new_state[1].clone();
+    assert_eq!(
+        new_nonce.value().unwrap(),
+        z_i[1].value().unwrap() + Fr::ONE
+    );
+
+    // pk hash should be unchanged
+    let pk_hash = new_state[2].clone();
+    assert_eq!(pk_hash.value().unwrap(), z_i[2].clone().value().unwrap());
+
+    // acc should be updated
+    let new_acc = new_state[3].clone();
+    assert_ne!(new_acc.value().unwrap(), z_i[3].clone().value().unwrap());
+
+    // block hash should be updated
+    let new_block_hash = new_state[4].clone();
+    assert_ne!(
+        new_block_hash.value().unwrap(),
+        z_i[4].clone().value().unwrap()
+    );
+
+    // block num should be updated
+    let new_block_num = new_state[5].clone();
+    assert_ne!(
+        new_block_num.value().unwrap(),
+        z_i[5].clone().value().unwrap()
+    );
+
+    // should be index of last "regular" processed tx
+    let new_processed_tx_index = new_state[6].clone();
+    assert_eq!(
+        new_processed_tx_index.value().unwrap(),
+        // the "regular transaction" is the first one in the vector of transactions
+        user_aux.transactions[0].1
+    );
+
     console_log!("n constraints: {}", cs.num_constraints());
 }
