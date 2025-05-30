@@ -69,24 +69,27 @@ impl<
 }
 
 pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
-    pub tx_inclusion_proof: MerkleSparseTreePath<TransactionTreeConfig<C>>,
-    pub signer_pk_inclusion_proof: MerkleSparseTreePath<SignerTreeConfig<C>>,
+    pub transaction_inclusion_proofs: Vec<MerkleSparseTreePath<TransactionTreeConfig<C>>>,
+    pub signer_pk_inclusion_proofs: Vec<MerkleSparseTreePath<SignerTreeConfig<C>>>,
     pub block: Block<F>,
-    pub transaction: (Transaction<C>, F),
+    // (transaction, transaction's index within the transaction tree)
+    pub transactions: Vec<(Transaction<C>, F)>,
     pub pk: PublicKey<C>,
 }
 
 pub struct UserAuxVar<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>> {
-    pub tx_inclusion_proof: MerkleSparseTreePathVar<
-        TransactionTreeConfig<C>,
-        F,
-        TransactionTreeConfigGadget<F, C, CVar>,
+    pub transaction_inclusion_proofs: Vec<
+        MerkleSparseTreePathVar<
+            TransactionTreeConfig<C>,
+            F,
+            TransactionTreeConfigGadget<F, C, CVar>,
+        >,
     >,
-    pub signer_pk_inclusion_proof:
-        MerkleSparseTreePathVar<SignerTreeConfig<C>, F, SignerTreeConfigGadget<F, C, CVar>>,
+    pub signer_pk_inclusion_proofs:
+        Vec<MerkleSparseTreePathVar<SignerTreeConfig<C>, F, SignerTreeConfigGadget<F, C, CVar>>>,
     pub block: BlockVar<F>,
     // (transaction, transaction's index within the transaction tree)
-    pub transaction: (TransactionVar<F, C, CVar>, FpVar<F>),
+    pub transactions: Vec<(TransactionVar<F, C, CVar>, FpVar<F>)>,
     pub pk: PublicKeyVar<C, CVar>,
 }
 
@@ -101,26 +104,35 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         let res = f()?;
         let cs = cs.into();
         let user_aux = res.borrow();
-        let tx_inclusion_proof = MerkleSparseTreePathVar::new_variable(
-            cs.clone(),
-            || Ok(user_aux.tx_inclusion_proof.clone()),
-            mode,
-        )?;
-        let signer_pk_inclusion_proof = MerkleSparseTreePathVar::new_variable(
-            cs.clone(),
-            || Ok(user_aux.signer_pk_inclusion_proof.clone()),
-            mode,
-        )?;
+        let mut transaction_inclusion_proofs = Vec::new();
+        for proof in user_aux.transaction_inclusion_proofs.iter() {
+            let tx_inclusion_proof =
+                MerkleSparseTreePathVar::new_variable(cs.clone(), || Ok(proof.clone()), mode)?;
+            transaction_inclusion_proofs.push(tx_inclusion_proof);
+        }
+
+        let mut signer_pk_inclusion_proofs = Vec::new();
+        for inclusion_proof in user_aux.signer_pk_inclusion_proofs.iter() {
+            let signer_pk_inclusion_proof = MerkleSparseTreePathVar::new_variable(
+                cs.clone(),
+                || Ok(inclusion_proof.clone()),
+                mode,
+            )?;
+            signer_pk_inclusion_proofs.push(signer_pk_inclusion_proof);
+        }
         let block = BlockVar::new_variable(cs.clone(), || Ok(user_aux.block.clone()), mode)?;
-        let transaction =
-            TransactionVar::new_variable(cs.clone(), || Ok(user_aux.transaction.0.clone()), mode)?;
-        let tx_index = FpVar::new_variable(cs.clone(), || Ok(user_aux.transaction.1), mode)?;
+        let mut transactions = Vec::new();
+        for (tx, index) in user_aux.transactions.iter() {
+            let tx_var = TransactionVar::new_variable(cs.clone(), || Ok(tx), mode)?;
+            let index = FpVar::new_variable(cs.clone(), || Ok(index), mode)?;
+            transactions.push((tx_var, index));
+        }
         let pk = PublicKeyVar::new_variable(cs.clone(), || Ok(user_aux.pk), mode)?;
         Ok(Self {
-            tx_inclusion_proof,
-            signer_pk_inclusion_proof,
+            transaction_inclusion_proofs,
+            signer_pk_inclusion_proofs,
             block,
-            transaction: (transaction, tx_index),
+            transactions,
             pk,
         })
     }
@@ -171,56 +183,69 @@ impl<
         // ensure the current processed block number is equal or greater than the previous block
         let _ = &prev_block_number.enforce_cmp(&aux.block.number, Ordering::Less, true)?;
 
-        // TX PROCESSING
+        // TXs PROCESSING
         // if prev_block_hash == currently_processed_block -> currently processed tx index should
         // be equal or greater than the next authorized tx index
         let processing_same_block = block_hash.is_eq(&prev_block_hash)?;
-        let prev_tx_index_is_lower =
-            &prev_processed_tx_index.is_cmp(&aux.transaction.1, Ordering::Less, true)?;
 
-        // if we are processing the same block, the previously processed transaction index should
-        // be lower than the currently processed transaction
-        prev_tx_index_is_lower
-            .conditional_enforce_equal(&Boolean::Constant(true), &processing_same_block)?;
+        for (
+            ((transaction, transaction_index), transaction_inclusion_proof),
+            signer_pk_inclusion_proof,
+        ) in aux
+            .transactions
+            .iter()
+            .zip(aux.transaction_inclusion_proofs)
+            .zip(aux.signer_pk_inclusion_proofs)
+        {
+            // if we are processing the same block, the previously processed transaction index should
+            // be lower than the currently processed transaction
+            let prev_tx_index_is_lower =
+                &prev_processed_tx_index.is_cmp(&transaction_index, Ordering::Less, true)?;
+            prev_tx_index_is_lower
+                .conditional_enforce_equal(&Boolean::Constant(true), &processing_same_block)?;
 
-        // check that tx is in tx tree
-        aux.tx_inclusion_proof.check_membership_with_index(
-            &self.pp,
-            &self.pp,
-            &aux.block.tx_tree_root,
-            &aux.transaction.0,
-            &aux.transaction.1,
-        )?;
+            // check that tx is in tx tree
+            transaction_inclusion_proof.check_membership_with_index(
+                &self.pp,
+                &self.pp,
+                &aux.block.tx_tree_root,
+                &transaction,
+                &transaction_index,
+            )?;
 
-        // check that tx signer is in the signer tree
-        let tx_signer = aux.transaction.0.get_signer();
-        aux.signer_pk_inclusion_proof.check_membership(
-            cs.clone(),
-            &self.pp,
-            &self.pp,
-            &aux.block.signer_tree_root,
-            &tx_signer,
-        )?;
+            let transaction_signer = transaction.get_signer();
 
-        // increment user nonce by 1 if the tx signer is the user
-        let signer_is_user = aux.pk.key.is_eq(&tx_signer.key)?;
-        nonce_t_plus_1 += &signer_is_user.into();
+            // check that tx signer is in the signer tree
+            signer_pk_inclusion_proof.check_membership(
+                cs.clone(),
+                &self.pp,
+                &self.pp,
+                &aux.block.signer_tree_root,
+                &transaction_signer,
+            )?;
 
-        // process transaction inputs and outputs
-        for input in aux.transaction.0.inputs {
-            input.pk.key.enforce_equal(&aux.pk.key)?;
-            balance_t_plus_1 += &input.amount;
-        }
+            // increment user nonce by 1 if the tx signer is the user
+            let signer_is_user = aux.pk.key.is_eq(&transaction_signer.key)?;
+            nonce_t_plus_1 += &signer_is_user.into();
 
-        for output in aux.transaction.0.outputs {
-            let receiver_is_user = output.pk.key.is_eq(&aux.pk.key)?;
-            balance_t_plus_1 += output.amount * &receiver_is_user.into();
+            // decrease user balance if sender is user
+            for input in transaction.inputs.iter() {
+                let sender_is_user = input.pk.key.is_eq(&aux.pk.key)?;
+                balance_t_plus_1 -= &input.amount * &sender_is_user.into();
+            }
+
+            // increase user balance if receiver is user
+            for output in transaction.outputs.iter() {
+                let receiver_is_user = output.pk.key.is_eq(&aux.pk.key)?;
+                balance_t_plus_1 += &output.amount * &receiver_is_user.into();
+            }
+
+            prev_processed_tx_index = transaction_index + FpVar::constant(F::one());
         }
 
         // set the new processed transaction index to the currently processed transaction
         // and set new block hash to the currently processed block
         prev_block_hash = block_hash;
-        prev_processed_tx_index = &aux.transaction.1 + FpVar::constant(F::one());
         prev_block_number = aux.block.number;
 
         Ok([
