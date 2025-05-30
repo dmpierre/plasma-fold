@@ -1,15 +1,16 @@
 // accumulate the block into the block accumulator (acc)
 use ark_crypto_primitives::{
     crh::{
-        poseidon::constraints::CRHParametersVar, CRHSchemeGadget, TwoToOneCRHScheme,
+        poseidon::constraints::CRHParametersVar, CRHScheme, CRHSchemeGadget, TwoToOneCRHScheme,
         TwoToOneCRHSchemeGadget,
     },
     sponge::Absorb,
 };
 use ark_ec::CurveGroup;
-use ark_r1cs_std::{alloc::AllocVar, fields::FieldVar, prelude::Boolean};
+use ark_r1cs_std::{alloc::AllocVar, fields::FieldVar, prelude::Boolean, select::CondSelectGadget};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use core::cmp::Ordering;
+use folding_schemes::folding::traits::Dummy;
 use plasma_fold::{
     datastructures::{
         block::{constraints::BlockVar, Block},
@@ -22,7 +23,10 @@ use plasma_fold::{
     },
     primitives::{
         accumulator::constraints::Accumulator,
-        crh::constraints::{BlockVarCRH, PublicKeyVarCRH},
+        crh::{
+            constraints::{BlockVarCRH, PublicKeyVarCRH, TransactionVarCRH},
+            TransactionCRH,
+        },
         sparsemt::{constraints::MerkleSparseTreePathVar, MerkleSparseTreePath},
     },
 };
@@ -153,6 +157,12 @@ impl<
         z_i: Vec<FpVar<F>>,
         aux: UserAuxVar<F, C, CVar>,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
+        let dummy_transaction_hash = FpVar::new_constant(
+            cs.clone(),
+            TransactionCRH::<F, C>::evaluate(&self.pp.parameters, Transaction::dummy(()))
+                .map_err(|_| SynthesisError::Unsatisfiable)?,
+        )?;
+
         // z_i is (balance, nonce, pk, acc, n_processed_tx)
         let (
             mut balance_t_plus_1,
@@ -183,10 +193,15 @@ impl<
         // ensure the current processed block number is equal or greater than the previous block
         let _ = &prev_block_number.enforce_cmp(&aux.block.number, Ordering::Less, true)?;
 
-        // TXs PROCESSING
-        // if prev_block_hash == currently_processed_block -> currently processed tx index should
-        // be equal or greater than the next authorized tx index
+        // transaction processing
+        // if prev_block_hash != currently_processed_block -> currently processed tx index should
+        // be reset to 0
         let processing_same_block = block_hash.is_eq(&prev_block_hash)?;
+        prev_processed_tx_index = CondSelectGadget::conditionally_select(
+            &processing_same_block,
+            &prev_processed_tx_index,
+            &FpVar::new_constant(cs.clone(), F::zero())?,
+        )?;
 
         for (
             ((transaction, transaction_index), transaction_inclusion_proof),
@@ -197,50 +212,68 @@ impl<
             .zip(aux.transaction_inclusion_proofs)
             .zip(aux.signer_pk_inclusion_proofs)
         {
-            // if we are processing the same block, the previously processed transaction index should
-            // be lower than the currently processed transaction
+            // are we processing a dummy transaction? (dummy transactions are used to fill up the vector)
+            let transaction_hash = TransactionVarCRH::evaluate(&self.pp, &transaction)?;
+
+            // if we are processing a dummy transaction, we do not enforce any of the conditions
+            let is_regular_transaction = transaction_hash.is_neq(&dummy_transaction_hash)?;
+
+            // if prev_block_hash == currently_processed_block -> currently processed tx index should
+            // be equal or greater than the next authorized tx index
             let prev_tx_index_is_lower =
                 &prev_processed_tx_index.is_cmp(&transaction_index, Ordering::Less, true)?;
             prev_tx_index_is_lower
-                .conditional_enforce_equal(&Boolean::Constant(true), &processing_same_block)?;
+                .conditional_enforce_equal(&Boolean::Constant(true), &is_regular_transaction)?;
 
             // check that tx is in tx tree
-            transaction_inclusion_proof.check_membership_with_index(
+            // if the tx is a dummy transaction, this check is not enforced
+            transaction_inclusion_proof.conditionally_check_membership_with_index(
                 &self.pp,
                 &self.pp,
                 &aux.block.tx_tree_root,
                 &transaction,
                 &transaction_index,
+                &is_regular_transaction,
             )?;
 
             let transaction_signer = transaction.get_signer();
 
             // check that tx signer is in the signer tree
-            signer_pk_inclusion_proof.check_membership(
+            // if the tx is a dummy transaction, this check is not enforced
+            signer_pk_inclusion_proof.conditionally_check_membership(
                 cs.clone(),
                 &self.pp,
                 &self.pp,
                 &aux.block.signer_tree_root,
                 &transaction_signer,
+                &is_regular_transaction,
             )?;
 
             // increment user nonce by 1 if the tx signer is the user
+            // in the case of a dummy tx, this will not increase the nonce
             let signer_is_user = aux.pk.key.is_eq(&transaction_signer.key)?;
             nonce_t_plus_1 += &signer_is_user.into();
 
             // decrease user balance if sender is user
+            // in the case of a dummy tx, this will not decrease the balance
             for input in transaction.inputs.iter() {
                 let sender_is_user = input.pk.key.is_eq(&aux.pk.key)?;
                 balance_t_plus_1 -= &input.amount * &sender_is_user.into();
             }
 
             // increase user balance if receiver is user
+            // in the case of a dummy tx, this will not increase the balance
             for output in transaction.outputs.iter() {
                 let receiver_is_user = output.pk.key.is_eq(&aux.pk.key)?;
                 balance_t_plus_1 += &output.amount * &receiver_is_user.into();
             }
 
-            prev_processed_tx_index = transaction_index + FpVar::constant(F::one());
+            // if we process are not processing dummy transaction, set the prev processed tx index
+            // to the current tx index
+            // (current_tx_index * 1) + (prev_processed_tx_index + 1) * 0;
+            prev_processed_tx_index = (transaction_index * &is_regular_transaction.clone().into())
+                + (prev_processed_tx_index + FpVar::constant(F::one()))
+                    * (FpVar::new_constant(cs.clone(), F::one())? - &is_regular_transaction.into());
         }
 
         // set the new processed transaction index to the currently processed transaction
