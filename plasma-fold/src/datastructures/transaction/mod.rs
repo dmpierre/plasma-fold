@@ -126,6 +126,7 @@ impl<C: CurveGroup> Transaction<C> {
 
 pub type TransactionTree<P> = MerkleSparseTree<P>;
 
+#[derive(Clone)]
 pub struct TransactionTreeConfig<C: CurveGroup> {
     _c: PhantomData<C>,
 }

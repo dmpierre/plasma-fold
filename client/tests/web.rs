@@ -11,7 +11,7 @@ use ark_grumpkin::Projective;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::r1cs::ConstraintSystem;
-use client::circuits::{UserAux, UserCircuit};
+use client::circuits::{UserAux, UserAuxVar, UserCircuit};
 use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 use plasma_fold::primitives::accumulator::constraints::PoseidonAccumulatorVar;
 use wasm_bindgen_test::*;
@@ -33,7 +33,7 @@ pub fn user_circuit_poseidon_n_constraints() {
         TwoToOneCRHGadget<_>,
         PoseidonAccumulatorVar<_>,
     >::new(pos_pp.clone(), pos_pp);
-    let user_aux = UserAux::<Fr, Projective, GVar>::new();
+    let user_aux = UserAuxVar::<Fr, Projective, GVar>::new();
     let z_i = Vec::<FpVar<Fr>>::new();
 
     user_circuit

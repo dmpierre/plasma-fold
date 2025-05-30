@@ -7,23 +7,23 @@ use ark_crypto_primitives::{
     sponge::Absorb,
 };
 use ark_ec::CurveGroup;
-use ark_r1cs_std::{fields::FieldVar, prelude::Boolean};
+use ark_r1cs_std::{alloc::AllocVar, fields::FieldVar, prelude::Boolean};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use core::cmp::Ordering;
 use plasma_fold::{
     datastructures::{
-        block::constraints::BlockVar,
-        keypair::constraints::PublicKeyVar,
+        block::{constraints::BlockVar, Block},
+        keypair::{constraints::PublicKeyVar, PublicKey},
         signerlist::{constraints::SignerTreeConfigGadget, SignerTreeConfig},
         transaction::{
             constraints::{TransactionTreeConfigGadget, TransactionVar},
-            TransactionTreeConfig,
+            Transaction, TransactionTreeConfig,
         },
     },
     primitives::{
         accumulator::constraints::Accumulator,
         crh::constraints::{BlockVarCRH, PublicKeyVarCRH},
-        sparsemt::constraints::MerkleSparseTreePathVar,
+        sparsemt::{constraints::MerkleSparseTreePathVar, MerkleSparseTreePath},
     },
 };
 use std::marker::PhantomData;
@@ -68,7 +68,15 @@ impl<
     }
 }
 
-pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>> {
+pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
+    pub tx_inclusion_proof: MerkleSparseTreePath<TransactionTreeConfig<C>>,
+    pub signer_pk_inclusion_proof: MerkleSparseTreePath<SignerTreeConfig<C>>,
+    pub block: Block<F>,
+    pub transaction: (Transaction<C>, F),
+    pub pk: PublicKey<C>,
+}
+
+pub struct UserAuxVar<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>> {
     pub tx_inclusion_proof: MerkleSparseTreePathVar<
         TransactionTreeConfig<C>,
         F,
@@ -83,10 +91,38 @@ pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: C
 }
 
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
-    UserAux<F, C, CVar>
+    AllocVar<UserAux<F, C>, F> for UserAuxVar<F, C, CVar>
 {
-    pub fn new() -> Self {
-        todo!()
+    fn new_variable<T: std::borrow::Borrow<UserAux<F, C>>>(
+        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        mode: ark_r1cs_std::prelude::AllocationMode,
+    ) -> Result<Self, SynthesisError> {
+        let res = f()?;
+        let cs = cs.into();
+        let user_aux = res.borrow();
+        let tx_inclusion_proof = MerkleSparseTreePathVar::new_variable(
+            cs.clone(),
+            || Ok(user_aux.tx_inclusion_proof.clone()),
+            mode,
+        )?;
+        let signer_pk_inclusion_proof = MerkleSparseTreePathVar::new_variable(
+            cs.clone(),
+            || Ok(user_aux.signer_pk_inclusion_proof.clone()),
+            mode,
+        )?;
+        let block = BlockVar::new_variable(cs.clone(), || Ok(user_aux.block.clone()), mode)?;
+        let transaction =
+            TransactionVar::new_variable(cs.clone(), || Ok(user_aux.transaction.0.clone()), mode)?;
+        let tx_index = FpVar::new_variable(cs.clone(), || Ok(user_aux.transaction.1), mode)?;
+        let pk = PublicKeyVar::new_variable(cs.clone(), || Ok(user_aux.pk), mode)?;
+        Ok(Self {
+            tx_inclusion_proof,
+            signer_pk_inclusion_proof,
+            block,
+            transaction: (transaction, tx_index),
+            pk,
+        })
     }
 }
 
@@ -103,7 +139,7 @@ impl<
         &self,
         cs: ConstraintSystemRef<F>,
         z_i: Vec<FpVar<F>>,
-        aux: UserAux<F, C, CVar>,
+        aux: UserAuxVar<F, C, CVar>,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
         // z_i is (balance, nonce, pk, acc, n_processed_tx)
         let (
