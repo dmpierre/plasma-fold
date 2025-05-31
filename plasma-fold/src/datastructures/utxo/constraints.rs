@@ -46,7 +46,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         } = f.borrow();
         Ok(Self {
             amount: FpVar::new_variable(cs.clone(), || Ok(F::from(*amount)), mode)?,
-            pk: PublicKeyVar::new_variable(cs.clone(), || Ok(PublicKey::from(*pk)), mode)?,
+            pk: PublicKeyVar::new_variable(cs.clone(), || Ok(*pk), mode)?,
             is_dummy: Boolean::new_variable(cs, || Ok(is_dummy), mode)?,
         })
     }

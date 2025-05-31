@@ -9,7 +9,7 @@ use ark_crypto_primitives::{
 };
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
-use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar};
+use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar, R1CSVar};
 
 use crate::datastructures::{
     block::constraints::BlockVar, keypair::constraints::PublicKeyVar,

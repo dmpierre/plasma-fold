@@ -175,9 +175,20 @@ pub mod tests {
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 
     use crate::{
-        datastructures::keypair::{constraints::PublicKeyVar, PublicKey},
-        primitives::crh::{constraints::PublicKeyVarCRH, PublicKeyCRH},
+        datastructures::{
+            keypair::{constraints::PublicKeyVar, KeyPair, PublicKey},
+            noncemap::Nonce,
+            transaction::{constraints::TransactionVar, Transaction},
+            user::User,
+            utxo::UTXO,
+        },
+        primitives::crh::{
+            constraints::{PublicKeyVarCRH, TransactionVarCRH},
+            PublicKeyCRH,
+        },
     };
+
+    use super::TransactionCRH;
 
     #[test]
     pub fn test_public_key_crh() {
@@ -202,7 +213,66 @@ pub mod tests {
 
             let res1 = PublicKeyCRH::evaluate(&pp, &public_key).unwrap();
             let res2 = PublicKeyVarCRH::evaluate(&pp_var, &public_key_var).unwrap();
+
             assert_eq!(res1, res2.value().unwrap());
+
+            // random public key
+            let random_pk = KeyPair::<Projective>::new(&mut rng).pk;
+            let random_pk_hash = PublicKeyCRH::evaluate(&pp, random_pk).unwrap();
+            assert_ne!(random_pk_hash, res1);
         }
+    }
+
+    #[test]
+    fn test_transaction_crh() {
+        let mut rng = thread_rng();
+        let user_a = User::<Projective>::new(&mut rng, 42);
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let pp = poseidon_canonical_config();
+        let pp_var = CRHParametersVar::new_constant(cs.clone(), &pp).unwrap();
+
+        let tx_a = Transaction {
+            inputs: [
+                UTXO::new(user_a.keypair.pk, 80),
+                UTXO::new(user_a.keypair.pk, 20),
+                UTXO::dummy(),
+                UTXO::dummy(),
+            ],
+            outputs: [
+                UTXO::new(KeyPair::new(&mut rng).pk, 100),
+                UTXO::dummy(),
+                UTXO::dummy(),
+                UTXO::dummy(),
+            ],
+            nonce: Nonce(0),
+        };
+        let tx_b = Transaction {
+            inputs: [
+                UTXO::new(user_a.keypair.pk, 80),
+                UTXO::new(user_a.keypair.pk, 20),
+                UTXO::dummy(),
+                UTXO::dummy(),
+            ],
+            outputs: [
+                UTXO::new(KeyPair::new(&mut rng).pk, 100),
+                UTXO::dummy(),
+                UTXO::dummy(),
+                UTXO::dummy(),
+            ],
+            nonce: Nonce(0),
+        };
+        let a = TransactionCRH::evaluate(&pp, &tx_a).unwrap();
+        let b = TransactionCRH::evaluate(&pp, &tx_b).unwrap();
+
+        assert_ne!(a, b);
+
+        let tx_a_var = TransactionVar::<_, _, GVar>::new_witness(cs.clone(), || Ok(tx_a)).unwrap();
+        let tx_b_var = TransactionVar::<_, _, GVar>::new_witness(cs.clone(), || Ok(tx_b)).unwrap();
+
+        let a_var = TransactionVarCRH::evaluate(&pp_var, &tx_a_var).unwrap();
+        let b_var = TransactionVarCRH::evaluate(&pp_var, &tx_b_var).unwrap();
+
+        assert_eq!(a_var.value().unwrap(), a);
+        assert_eq!(b_var.value().unwrap(), b);
     }
 }

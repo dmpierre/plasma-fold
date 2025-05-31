@@ -33,16 +33,16 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
 {
     type Error = SynthesisError;
     fn try_into(self) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        let mut arr = self
-            .inputs
-            .iter()
-            .chain(&self.outputs)
-            .flat_map(|utxo| [utxo.amount.clone(), utxo.is_dummy.clone().into()])
-            .collect::<Vec<_>>();
+        let mut arr = Vec::new();
+        for utxo in self.inputs.iter().chain(&self.outputs) {
+            arr.push(utxo.amount.clone());
+            arr.push(utxo.is_dummy.clone().into());
+            let point = utxo.pk.key.to_constraint_field()?;
+            for p in point {
+                arr.push(p);
+            }
+        }
         arr.push(self.nonce.clone());
-        let pk = self.inputs[0].pk.clone();
-        let fp = pk.key.to_constraint_field()?;
-        arr = [arr, fp].concat();
         Ok(arr)
     }
 }

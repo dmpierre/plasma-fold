@@ -45,20 +45,21 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> Transaction<C> {
 
 impl<F: PrimeField, C: CurveGroup<BaseField = F>> Into<Vec<F>> for &Transaction<C> {
     fn into(self) -> Vec<F> {
-        let mut arr = self
-            .inputs
-            .iter()
-            .chain(&self.outputs)
-            .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.is_dummy)])
-            .collect::<Vec<_>>();
+        let mut arr = Vec::new();
+        for utxo in self.inputs.iter().chain(&self.outputs) {
+            arr.push(F::from(utxo.amount));
+            arr.push(F::from(utxo.is_dummy));
+            let point = utxo.pk.key.into_affine();
+            let (x, y, iszero) = if point.is_zero() {
+                (F::ZERO, F::ZERO, F::ONE)
+            } else {
+                (point.x().unwrap(), point.y().unwrap(), F::ZERO)
+            };
+            arr.push(x);
+            arr.push(y);
+            arr.push(iszero);
+        }
         arr.push(F::from(self.nonce.0));
-        // the `is_valid` method checks, in-circuit, that the public key for the first utxo is the
-        // same for all the following utxos in the transaction
-        let pk = self.inputs[0].pk.key.into_affine();
-        let (x, y) = pk.xy().unwrap_or_else(|| (F::ZERO, F::ZERO));
-        arr.push(x);
-        arr.push(y);
-        arr.push(pk.is_zero().into());
         arr
     }
 }
