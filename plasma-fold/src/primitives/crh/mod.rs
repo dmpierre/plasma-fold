@@ -125,9 +125,22 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> CRHScheme for UTXOCRH<C> {
         input: T,
     ) -> Result<Self::Output, Error> {
         let utxo: &UTXO<C> = input.borrow();
+        let pk_point = utxo.pk.key.into_affine();
+        let (x, y, iszero) = if pk_point.is_zero() {
+            (C::BaseField::ZERO, C::BaseField::ZERO, C::BaseField::ONE)
+        } else {
+            (
+                pk_point.x().unwrap(),
+                pk_point.y().unwrap(),
+                C::BaseField::from(pk_point.is_zero()),
+            )
+        };
         let input = [
             C::BaseField::from(utxo.amount),
             C::BaseField::from(utxo.is_dummy),
+            x,
+            y,
+            iszero,
         ];
         Ok(CRH::evaluate(parameters, input)?)
     }

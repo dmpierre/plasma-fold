@@ -110,7 +110,11 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
         let bool_as_fp: FpVar<F> = input.is_dummy.clone().into();
-        let input = [input.amount.clone(), bool_as_fp];
+        let pk_point = input.pk.key.to_constraint_field()?;
+        let mut input = Vec::from([input.amount.clone(), bool_as_fp]);
+        for p in pk_point {
+            input.push(p);
+        }
         CRHGadget::evaluate(parameters, &input)
     }
 }
