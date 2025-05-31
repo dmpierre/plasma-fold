@@ -19,6 +19,7 @@ pub const ROLLUP_CONTRACT_ID: u32 = 0;
 
 pub type UserId = u32;
 
+#[derive(Clone)]
 pub struct User<C: CurveGroup> {
     pub keypair: KeyPair<C>,
     pub balance: u64,

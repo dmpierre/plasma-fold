@@ -10,7 +10,7 @@ use ark_std::rand::Rng;
 pub mod constraints;
 
 // Schnorr secret key
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SecretKey<F: PrimeField> {
     pub key: F,
 }
@@ -69,7 +69,7 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> PublicKey<C> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct KeyPair<C: CurveGroup> {
     pub sk: SecretKey<C::ScalarField>,
     pub pk: PublicKey<C>,

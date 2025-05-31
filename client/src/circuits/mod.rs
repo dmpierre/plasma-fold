@@ -35,6 +35,8 @@ use std::marker::PhantomData;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, groups::CurveVar};
 
+use crate::N_TX_PER_FOLD_STEP;
+
 pub struct UserCircuit<
     F: PrimeField + Absorb,
     C: CurveGroup,
@@ -78,7 +80,7 @@ pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
     pub signer_pk_inclusion_proofs: Vec<MerkleSparseTreePath<SignerTreeConfig<C>>>,
     pub block: Block<F>,
     // (transaction, transaction's index within the transaction tree)
-    pub transactions: Vec<(Transaction<C>, F)>,
+    pub transactions: Vec<(Transaction<C>, u64)>,
     pub pk: PublicKey<C>,
 }
 
@@ -129,7 +131,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         let mut transactions = Vec::new();
         for (tx, index) in user_aux.transactions.iter() {
             let tx_var = TransactionVar::new_variable(cs.clone(), || Ok(tx), mode)?;
-            let index = FpVar::new_variable(cs.clone(), || Ok(index), mode)?;
+            let index = FpVar::new_variable(cs.clone(), || Ok(F::from(*index)), mode)?;
             transactions.push((tx_var, index));
         }
         let pk = PublicKeyVar::new_variable(cs.clone(), || Ok(user_aux.pk), mode)?;
@@ -158,6 +160,10 @@ impl<
         z_i: Vec<FpVar<F>>,
         aux: UserAuxVar<F, C, CVar>,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
+        assert_eq!(aux.transaction_inclusion_proofs.len(), N_TX_PER_FOLD_STEP);
+        assert_eq!(aux.transactions.len(), N_TX_PER_FOLD_STEP);
+        assert_eq!(aux.signer_pk_inclusion_proofs.len(), N_TX_PER_FOLD_STEP);
+
         let dummy_transaction_hash = FpVar::new_constant(
             cs.clone(),
             TransactionCRH::<F, C>::evaluate(&self.pp.parameters, Transaction::dummy(()))

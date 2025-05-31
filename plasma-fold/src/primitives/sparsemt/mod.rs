@@ -60,7 +60,7 @@ pub struct MerkleSparseTree<P: SparseConfig> {
 /// Our path `is_left_child()` if the boolean in `path` is true.
 #[derive(Clone)]
 pub struct MerkleSparseTreePath<P: SparseConfig> {
-    pub(crate) path: Vec<(P::InnerDigest, P::InnerDigest)>,
+    pub path: Vec<(P::InnerDigest, P::InnerDigest)>,
 }
 
 /// A modifying proof, consisting of two Merkle tree paths
