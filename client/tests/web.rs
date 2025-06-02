@@ -11,7 +11,7 @@ use ark_crypto_primitives::{
 };
 use ark_ff::{AdditiveGroup, Field};
 use ark_grumpkin::{constraints::GVar, Projective};
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
+use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
 use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 use ark_std::rand::thread_rng;
 use client::{
@@ -28,7 +28,8 @@ use plasma_fold::{
         utxo::UTXO,
     },
     primitives::{
-        accumulator::constraints::PoseidonAccumulatorVar, crh::PublicKeyCRH,
+        accumulator::constraints::PoseidonAccumulatorVar,
+        crh::{BlockCRH, PublicKeyCRH},
         sparsemt::MerkleSparseTreePath,
     },
 };
@@ -162,6 +163,7 @@ pub fn test_send_and_receive_transaction() {
     let receiver_pk_hash = PublicKeyCRH::evaluate(&pp, receiver.keypair.pk).unwrap();
 
     let transaction = make_tx(&sender, &receiver);
+    // Vec of [(transaction, index in tx tree)]
     let mut transactions = Vec::from([(transaction, 2)]);
     pad_transaction_vec(&mut transactions);
     let transaction_tree = make_tx_tree(&pp, &transactions);
@@ -186,11 +188,17 @@ pub fn test_send_and_receive_transaction() {
     let sender_aux = UserAux {
         transaction_inclusion_proofs,
         signer_pk_inclusion_proofs,
-        block,
+        block: block.clone(),
         transactions,
         pk: sender.keypair.pk,
     };
+    let mut receiver_aux = sender_aux.clone();
+    receiver_aux.pk = receiver.keypair.pk;
+
     let sender_aux_var = UserAuxVar::new_witness(cs.clone(), || Ok(sender_aux.clone())).unwrap();
+    let receiver_aux_var =
+        UserAuxVar::new_witness(cs.clone(), || Ok(receiver_aux.clone())).unwrap();
+
     let sender_state = Vec::from([
         Fr::from(100),
         Fr::ZERO,
@@ -200,7 +208,7 @@ pub fn test_send_and_receive_transaction() {
         Fr::ZERO,
         Fr::ZERO,
     ]);
-    let sender_state_var = get_state_as_var(cs.clone(), sender_state);
+    let sender_state_var = get_state_as_var(cs.clone(), sender_state.clone());
     let receiver_state = Vec::from([
         Fr::from(100),
         Fr::ZERO,
@@ -210,17 +218,46 @@ pub fn test_send_and_receive_transaction() {
         Fr::ZERO,
         Fr::ZERO,
     ]);
+    let receiver_state_var = get_state_as_var(cs.clone(), receiver_state.clone());
 
     let updated_sender_state = sender_circuit
         .update_balance(cs.clone(), sender_state_var, sender_aux_var)
         .unwrap();
-
     assert!(cs.is_satisfied().unwrap());
     console_log!("n_constraints sender circuit: {}", cs.num_constraints());
-}
 
-#[wasm_bindgen_test]
-pub fn test_incorrect_pk_hash() {}
+    let expected_block_hash = BlockCRH::evaluate(&pp, block.clone()).unwrap();
+
+    // Check sender updates
+    assert_eq!(updated_sender_state[0].value().unwrap(), Fr::ZERO); // balance
+    assert_eq!(updated_sender_state[1].value().unwrap(), Fr::ONE); // nonce
+    assert_ne!(updated_sender_state[3].value().unwrap(), sender_state[3]); // acc is updated
+    assert_eq!(
+        updated_sender_state[4].value().unwrap(),
+        expected_block_hash
+    );
+    assert_eq!(updated_sender_state[5].value().unwrap(), Fr::ONE); // prev block number
+    assert_eq!(updated_sender_state[6].value().unwrap(), Fr::from(2)); // prev processed tx index
+
+    // Check receiver updates
+    let updated_receiver_state = receiver_circuit
+        .update_balance(cs.clone(), receiver_state_var, receiver_aux_var)
+        .unwrap();
+
+    assert_eq!(updated_receiver_state[0].value().unwrap(), Fr::from(200)); // balance
+    assert_eq!(updated_receiver_state[1].value().unwrap(), Fr::ZERO); // nonce is not increased
+                                                                      // when receiving
+    assert_ne!(
+        updated_receiver_state[3].value().unwrap(),
+        receiver_state[3]
+    ); // acc is updated
+    assert_eq!(
+        updated_receiver_state[4].value().unwrap(),
+        expected_block_hash
+    );
+    assert_eq!(updated_receiver_state[5].value().unwrap(), Fr::ONE); // prev block number
+    assert_eq!(updated_receiver_state[6].value().unwrap(), Fr::from(2)); // prev processed tx index
+}
 
 #[wasm_bindgen_test]
 pub fn test_lower_block_number() {}
