@@ -47,7 +47,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TransactionVar<
     F: PrimeField + Absorb,
     C: CurveGroup<BaseField = F>,
@@ -85,6 +85,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct TransactionTreeConfigGadget<F: PrimeField, C: CurveGroup, CVar: CurveVar<C, F>> {
     _f: PhantomData<F>,
     _c: PhantomData<C>,
@@ -132,6 +133,27 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
             result &= self.nonce.is_eq(&nonce)?;
         }
         Ok(result)
+    }
+
+    pub fn enforce_valid(
+        &self,
+        sender: Option<PublicKeyVar<C, CVar>>,
+        nonce: Option<NonceVar<F>>,
+    ) -> Result<(), SynthesisError> {
+        let sender = sender.unwrap_or(self.inputs[0].pk.clone());
+        for i in &self.inputs {
+            i.pk.key.enforce_equal(&sender.key)?;
+        }
+        self.inputs
+            .iter()
+            .zip(&self.outputs)
+            .map(|(i, o)| &i.amount - &o.amount)
+            .sum::<FpVar<F>>()
+            .enforce_equal(&FpVar::zero())?;
+        if let Some(nonce) = nonce {
+            self.nonce.enforce_equal(&nonce)?;
+        }
+        Ok(())
     }
 
     pub fn get_signer(&self) -> PublicKeyVar<C, CVar> {

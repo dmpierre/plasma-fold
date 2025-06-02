@@ -46,7 +46,7 @@ impl<
     pub fn sign(
         &self,
         pp: &PoseidonConfig<F2>,
-        m: F2,
+        m: &[F2],
         rng: &mut impl Rng,
     ) -> Result<Signature<F>, Error> {
         Ok(self.keypair.sk.sign::<C>(pp, m, rng)?)

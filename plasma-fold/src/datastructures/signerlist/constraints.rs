@@ -16,6 +16,7 @@ use crate::{
 
 use super::SignerTreeConfig;
 
+#[derive(Clone, Debug)]
 pub struct SignerTreeConfigGadget<F: PrimeField, C: CurveGroup, CVar: CurveVar<C, F>> {
     _f: PhantomData<F>,
     _c: PhantomData<C>,

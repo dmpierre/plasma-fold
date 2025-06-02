@@ -259,7 +259,7 @@ mod tests {
                     Some(
                         sk.sign::<G1Projective>(
                             &config,
-                            TransactionCRH::evaluate(&config, transactions[i].clone()).unwrap(),
+                            &Into::<Vec<_>>::into(&transactions[i]),
                             rng,
                         )
                         .unwrap(),

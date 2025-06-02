@@ -41,6 +41,7 @@ impl<C: CurveGroup<BaseField: Absorb + PrimeField>, CVar: CurveVar<C, C::BaseFie
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct SignatureVar<F: PrimeField> {
     pub s: Vec<Boolean<F>>,
     pub e: Vec<Boolean<F>>,
@@ -70,9 +71,18 @@ impl<C: CurveGroup<BaseField: Absorb + PrimeField>, CVar: CurveVar<C, C::BaseFie
     pub fn verify_signature<const W: usize>(
         &self,
         pp: &CRHParametersVar<C::BaseField>,
-        m: FpVar<C::BaseField>,
+        m: &[FpVar<C::BaseField>],
         SignatureVar { s, e }: SignatureVar<C::BaseField>,
     ) -> Result<(), SynthesisError> {
         SchnorrGadget::verify::<W, C, CVar>(pp, &self.key, m, (s, e))
+    }
+
+    pub fn is_signature_valid<const W: usize>(
+        &self,
+        pp: &CRHParametersVar<C::BaseField>,
+        m: &[FpVar<C::BaseField>],
+        SignatureVar { s, e }: SignatureVar<C::BaseField>,
+    ) -> Result<Boolean<C::BaseField>, SynthesisError> {
+        SchnorrGadget::is_valid::<W, C, CVar>(pp, &self.key, m, (s, e))
     }
 }

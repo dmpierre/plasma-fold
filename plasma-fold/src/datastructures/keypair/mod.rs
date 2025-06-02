@@ -23,7 +23,7 @@ impl<F: PrimeField> SecretKey<F> {
     pub fn sign<C: CurveGroup<ScalarField = F, BaseField: PrimeField + Absorb>>(
         &self,
         pp: &PoseidonConfig<C::BaseField>,
-        m: C::BaseField,
+        m: &[C::BaseField],
         rng: &mut impl Rng,
     ) -> Result<Signature<C::ScalarField>, Error> {
         let (s, e) = Schnorr::sign::<C>(pp, self.key, m, rng)?;

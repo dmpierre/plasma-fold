@@ -34,14 +34,14 @@ impl Schnorr {
     pub fn sign<C: CurveGroup<BaseField: PrimeField + Absorb>>(
         pp: &PoseidonConfig<C::BaseField>,
         sk: C::ScalarField,
-        m: C::BaseField,
+        m: &[C::BaseField],
         rng: &mut impl Rng,
     ) -> Result<(C::ScalarField, C::ScalarField), Error> {
         loop {
             let k = C::ScalarField::rand(rng);
             let (x, y) = C::generator().mul(k).into_affine().xy().unwrap();
 
-            let h = CRH::evaluate(pp, [x, y, m])?;
+            let h = CRH::evaluate(pp, [&[x, y], m].concat())?;
             let mut h_bits = h.into_bigint().to_bits_le();
             h_bits.truncate(C::ScalarField::MODULUS_BIT_SIZE as usize + 1);
             let h = <C::ScalarField as PrimeField>::BigInt::from_bits_le(&h_bits);
@@ -135,7 +135,7 @@ impl SchnorrGadget {
     >(
         pp: &CRHParametersVar<C::BaseField>,
         pk: &CVar,
-        m: FpVar<C::BaseField>,
+        m: &[FpVar<C::BaseField>],
         (s, e): (Vec<Boolean<C::BaseField>>, Vec<Boolean<C::BaseField>>),
     ) -> Result<(), SynthesisError> {
         let len = C::ScalarField::MODULUS_BIT_SIZE as usize;
@@ -145,7 +145,7 @@ impl SchnorrGadget {
 
         let mut xy = r.to_constraint_field()?;
         xy.pop();
-        xy.push(m);
+        xy.extend_from_slice(m);
 
         let h = CRHGadget::evaluate(pp, &xy)?;
         let mut h_bits = h.to_bits_le()?;
@@ -161,6 +161,39 @@ impl SchnorrGadget {
         h_bits[len - 1].enforce_equal(&e[len - 1])?;
 
         Ok(())
+    }
+
+    pub fn is_valid<
+        const W: usize,
+        C: CurveGroup<BaseField: PrimeField + Absorb>,
+        CVar: CurveVar<C, C::BaseField>,
+    >(
+        pp: &CRHParametersVar<C::BaseField>,
+        pk: &CVar,
+        m: &[FpVar<C::BaseField>],
+        (s, e): (Vec<Boolean<C::BaseField>>, Vec<Boolean<C::BaseField>>),
+    ) -> Result<Boolean<C::BaseField>, SynthesisError> {
+        let len = C::ScalarField::MODULUS_BIT_SIZE as usize;
+
+        let g = CVar::constant(C::generator());
+        let r = g.scalar_mul_le(s.iter())? + pk.scalar_mul_le(e.iter())?;
+
+        let mut xy = r.to_constraint_field()?;
+        xy.pop();
+        xy.extend_from_slice(m);
+
+        let h = CRHGadget::evaluate(pp, &xy)?;
+        let mut h_bits = h.to_bits_le()?;
+        h_bits.truncate(len);
+
+        enforce_lt::<_, W>(
+            &h_bits,
+            &Vec::new_constant(h.cs(), &C::ScalarField::MODULUS.to_bits_le()[..len])?,
+        )?;
+
+        Ok(Boolean::le_bits_to_fp(&h_bits[..len - 1])?
+            .is_eq(&Boolean::le_bits_to_fp(&e[..len - 1])?)?
+            & h_bits[len - 1].is_eq(&e[len - 1])?)
     }
 }
 
@@ -257,7 +290,7 @@ mod tests {
         let pp = PoseidonConfig::<Fr>::new(R_F, R_P, ALPHA, mds, ark, WIDTH - 1, 1);
         let (sk, pk) = Schnorr::key_gen::<Projective>(rng);
         let m = Fr::rand(rng);
-        let (s, e) = Schnorr::sign::<Projective>(&pp, sk, m, rng).unwrap();
+        let (s, e) = Schnorr::sign::<Projective>(&pp, sk, &[m], rng).unwrap();
         assert!(Schnorr::verify(&pp, &pk, m, (s, e)).unwrap());
     }
 
@@ -271,7 +304,7 @@ mod tests {
         let pp = PoseidonConfig::<Fr>::new(R_F, R_P, ALPHA, mds, ark, WIDTH - 1, 1);
         let (sk, pk) = Schnorr::key_gen::<Projective>(rng);
         let m = Fr::rand(rng);
-        let (s, e) = Schnorr::sign::<Projective>(&pp, sk, m, rng).unwrap();
+        let (s, e) = Schnorr::sign::<Projective>(&pp, sk, &[m], rng).unwrap();
         assert!(Schnorr::verify(&pp, &pk, m, (s, e)).unwrap());
 
         let pp = CRHParametersVar::new_constant(cs.clone(), pp).unwrap();
@@ -283,7 +316,7 @@ mod tests {
             Vec::new_witness(cs.clone(), || Ok(&s_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
         let e =
             Vec::new_witness(cs.clone(), || Ok(&e_bits[..Fq::MODULUS_BIT_SIZE as usize])).unwrap();
-        SchnorrGadget::verify::<W, _, _>(&pp, &pk, m, (s, e)).unwrap();
+        SchnorrGadget::verify::<W, _, _>(&pp, &pk, &[m], (s, e)).unwrap();
 
         println!("Signature n_constraints: {}", cs.num_constraints());
         assert!(cs.is_satisfied().unwrap());

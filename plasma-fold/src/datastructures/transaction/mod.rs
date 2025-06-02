@@ -127,7 +127,7 @@ impl<C: CurveGroup> Transaction<C> {
 
 pub type TransactionTree<P> = MerkleSparseTree<P>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TransactionTreeConfig<C: CurveGroup> {
     _c: PhantomData<C>,
 }
@@ -253,12 +253,12 @@ pub mod tests {
         // initialize user, tx, h(tx) and sign(tx)
         let user = User::<Projective>::new(rng, 1);
         let tx = Transaction::<Projective>::default();
-        let tx_hash = tx.get_hash(&pp).unwrap();
-        let tx_signature = user.sign(&pp, tx_hash, &mut rng).unwrap();
+        let tx_signature = user
+            .sign(&pp, &Into::<Vec<_>>::into(&tx), &mut rng)
+            .unwrap();
 
         // alloc tx, h(tx), user.pubkey and sign(tx)
         let tx_var = TransactionVar::<_, _, GVar>::new_witness(cs.clone(), || Ok(tx)).unwrap();
-        let tx_hash_var = TransactionVarCRH::evaluate(&pp_var, &tx_var).unwrap();
         let pk_var =
             PublicKeyVar::<Projective, GVar>::new_witness(cs.clone(), || Ok(user.keypair.pk))
                 .unwrap();
@@ -268,7 +268,7 @@ pub mod tests {
         let res = SchnorrGadget::verify::<W, _, _>(
             &pp_var,
             &pk_var.key,
-            tx_hash_var,
+            &TryInto::<Vec<_>>::try_into(&tx_var).unwrap(),
             (signature_var.s, signature_var.e),
         )
         .unwrap();
@@ -318,7 +318,15 @@ pub mod tests {
             let update_proof = tx_tree.update_and_prove(idx as u64, tx).unwrap();
             let new_root = tx_tree.root();
             update_proof
-                .verify(&pp, &pp, &prev_root, &new_root, &tx, idx as u64)
+                .verify(
+                    &pp,
+                    &pp,
+                    &prev_root,
+                    &new_root,
+                    &Transaction::default(),
+                    &tx,
+                    idx as u64,
+                )
                 .unwrap();
             update_proofs.push((update_proof, prev_root, new_root, tx, idx));
         }
@@ -343,6 +351,7 @@ pub mod tests {
                     &pp_var,
                     &prev_root_var,
                     &new_root_var,
+                    &TransactionVar::new_constant(cs.clone(), &Transaction::default()).unwrap(),
                     &tx_var,
                     &FpVar::constant(Fr::from(idx as u64)),
                 )

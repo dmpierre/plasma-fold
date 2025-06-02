@@ -65,8 +65,7 @@ pub struct MerkleSparseTreePath<P: SparseConfig> {
 
 /// A modifying proof, consisting of two Merkle tree paths
 pub struct MerkleSparseTreeTwoPaths<P: SparseConfig> {
-    pub(crate) old_path: MerkleSparseTreePath<P>,
-    pub(crate) new_path: MerkleSparseTreePath<P>,
+    pub path: Vec<P::InnerDigest>,
 }
 
 impl<P: SparseConfig> Default for MerkleSparseTreePath<P> {
@@ -81,9 +80,11 @@ impl<P: SparseConfig> Default for MerkleSparseTreePath<P> {
 
 impl<P: SparseConfig> Default for MerkleSparseTreeTwoPaths<P> {
     fn default() -> Self {
-        let old_path: MerkleSparseTreePath<P> = MerkleSparseTreePath::default();
-        let new_path: MerkleSparseTreePath<P> = MerkleSparseTreePath::default();
-        Self { old_path, new_path }
+        let mut path = Vec::with_capacity(P::HEIGHT as usize);
+        for _i in 1..P::HEIGHT as usize {
+            path.push(P::InnerDigest::default());
+        }
+        Self { path }
     }
 }
 
@@ -207,108 +208,35 @@ impl<
         two_to_one_hash_params: &<P::TwoToOneHash as TwoToOneCRHScheme>::Parameters,
         old_root_hash: &P::InnerDigest,
         new_root_hash: &P::InnerDigest,
-        leaf: &P::Leaf,
+        old_leaf: &P::Leaf,
+        new_leaf: &P::Leaf,
         index: u64,
     ) -> Result<bool, Error> {
-        if self.old_path.path.len() != (P::HEIGHT - 1) as usize
-            || self.new_path.path.len() != (P::HEIGHT - 1) as usize
-        {
+        if self.path.len() != (P::HEIGHT - 1) as usize {
             return Ok(false);
         }
         // Check that the given leaf matches the leaf in the membership proof.
         let last_level_index: u64 = (1u64 << (P::HEIGHT - 1)) - 1;
-        let tree_index: u64 = last_level_index + index;
+        let mut tree_index: u64 = last_level_index + index;
 
-        let mut index_from_path: u64 = last_level_index;
-        let mut index_offset: u64 = 1;
-
-        if !self.old_path.path.is_empty() && !self.new_path.path.is_empty() {
-            // Check the new path first
-            let claimed_leaf_hash = P::LeafHash::evaluate(leaf_hash_params, leaf)?;
-
-            if tree_index % 2 == 1 {
-                if claimed_leaf_hash != self.new_path.path[0].0 {
-                    return Ok(false);
-                }
-            } else if claimed_leaf_hash != self.new_path.path[0].1 {
-                return Ok(false);
-            }
-
-            let mut prev = claimed_leaf_hash;
-            let mut prev_index = tree_index;
-
-            // Check levels between leaf level and root.
-            for &(ref left_hash, ref right_hash) in &self.new_path.path {
-                // Check if the previous hash matches the correct current hash.
-                if prev_index % 2 == 1 {
-                    if &prev != left_hash {
-                        return Ok(false);
-                    }
-                } else {
-                    if &prev != right_hash {
-                        return Ok(false);
-                    }
-                    index_from_path += index_offset;
-                }
-                index_offset *= 2;
-                prev_index = (prev_index - 1) / 2;
-                prev = P::TwoToOneHash::evaluate(two_to_one_hash_params, left_hash, right_hash)?;
-            }
-
-            if new_root_hash != &prev {
-                return Ok(false);
-            }
-
-            if index_from_path != tree_index {
-                return Ok(false);
-            }
-
-            if tree_index % 2 == 1 {
-                prev = self.old_path.path[0].0.clone();
+        let mut old_hash = P::LeafHash::evaluate(leaf_hash_params, old_leaf)?;
+        let mut new_hash = P::LeafHash::evaluate(leaf_hash_params, new_leaf)?;
+        for neighbor in &self.path {
+            (old_hash, new_hash) = if tree_index % 2 == 1 {
+                (
+                    P::TwoToOneHash::evaluate(two_to_one_hash_params, &old_hash, neighbor)?,
+                    P::TwoToOneHash::evaluate(two_to_one_hash_params, &new_hash, neighbor)?,
+                )
             } else {
-                prev = self.old_path.path[0].1.clone();
-            }
-
-            prev_index = tree_index;
-            let mut new_path_iter = self.new_path.path.iter();
-            for &(ref left_hash, ref right_hash) in &self.old_path.path {
-                // Check if the previous hash matches the correct current hash.
-                if prev_index % 2 == 1 {
-                    if &prev != left_hash {
-                        return Ok(false);
-                    }
-                } else if &prev != right_hash {
-                    return Ok(false);
-                }
-
-                let new_path_corresponding_entry = new_path_iter.next();
-
-                // Check the co-path is unchanged
-                match new_path_corresponding_entry {
-                    Some(x) => {
-                        if prev_index % 2 == 1 {
-                            if *right_hash != x.1 {
-                                return Ok(false);
-                            }
-                        } else if *left_hash != x.0 {
-                            return Ok(false);
-                        }
-                    }
-                    None => return Ok(false),
-                }
-
-                prev_index = (prev_index - 1) / 2;
-                prev = P::TwoToOneHash::evaluate(two_to_one_hash_params, left_hash, right_hash)?;
-            }
-
-            if old_root_hash != &prev {
-                return Ok(false);
-            }
-
-            Ok(true)
-        } else {
-            Ok(false)
+                (
+                    P::TwoToOneHash::evaluate(two_to_one_hash_params, neighbor, &old_hash)?,
+                    P::TwoToOneHash::evaluate(two_to_one_hash_params, neighbor, &new_hash)?,
+                )
+            };
+            tree_index = (tree_index - 1) / 2;
         }
+
+        Ok(old_root_hash == &old_hash && new_root_hash == &new_hash && tree_index == 0)
     }
 }
 
@@ -510,7 +438,7 @@ impl<
         index: u64,
         new_leaf: &P::Leaf,
     ) -> Result<MerkleSparseTreeTwoPaths<P>, Error> {
-        let old_path = self.generate_membership_proof(index)?;
+        let mut path = vec![];
 
         let new_leaf_hash = P::LeafHash::evaluate(&self.leaf_hash_params, new_leaf)?;
 
@@ -522,6 +450,7 @@ impl<
 
         // Iterate from the leaf up to the root, storing all intermediate hash values.
         let mut current_node = tree_index;
+        let mut is_left = is_left_child(current_node);
         current_node = parent(current_node).unwrap();
 
         let mut empty_hashes_iter = self.empty_hashes.iter();
@@ -545,6 +474,7 @@ impl<
                     _ => return Err(Error::GenericError(Box::new(SparseMTError::GenericError))), // TODO: change this
                 }
             }
+            path.push(if is_left { right_hash } else { left_hash });
 
             self.tree.insert(
                 current_node,
@@ -555,6 +485,7 @@ impl<
                 break;
             }
 
+            is_left = is_left_child(current_node);
             current_node = parent(current_node).unwrap();
         }
 
@@ -563,9 +494,7 @@ impl<
             None => return Err(Error::GenericError(Box::new(SparseMTError::GenericError))), // TODO: change this
         }
 
-        let new_path = self.generate_proof(index, new_leaf)?;
-
-        Ok(MerkleSparseTreeTwoPaths { old_path, new_path })
+        Ok(MerkleSparseTreeTwoPaths { path })
     }
 
     /// check if the tree is structurally valid
@@ -876,6 +805,7 @@ mod test {
                             two_to_one_hash_params,
                             &old_root,
                             &new_root,
+                            &old_leaf,
                             &new_leaf,
                             *i
                         )
@@ -901,6 +831,7 @@ mod test {
                             two_to_one_hash_params,
                             &old_root,
                             &new_root,
+                            &UTXO::default(),
                             &new_leaf,
                             *i
                         )

@@ -63,6 +63,7 @@ impl<C: CurveGroup> Default for UTXO<C> {
 
 pub type UTXOTree<P> = MerkleSparseTree<P>;
 
+#[derive(Clone, Debug)]
 pub struct UTXOTreeConfig<C: CurveGroup> {
     _c: PhantomData<C>,
 }

@@ -27,16 +27,15 @@ pub trait SparseConfigGadget<P: Config, F: PrimeField>: ConfigGadget<P, F> {
 }
 
 /// Gadgets for one Merkle tree path
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MerkleSparseTreePathVar<MP: Config, F: PrimeField, P: SparseConfigGadget<MP, F>> {
     path: Vec<(P::InnerDigest, P::InnerDigest)>,
 }
 
 /// Gadgets for two Merkle tree paths
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MerkleSparseTreeTwoPathsVar<MP: Config, F: PrimeField, P: SparseConfigGadget<MP, F>> {
-    old_path: Vec<(P::InnerDigest, P::InnerDigest)>,
-    new_path: Vec<(P::InnerDigest, P::InnerDigest)>,
+    path: Vec<P::InnerDigest>,
 }
 
 impl<
@@ -235,6 +234,57 @@ impl<
         >,
     > MerkleSparseTreeTwoPathsVar<MP, F, P>
 {
+    /// Update root
+    pub fn update_root(
+        &self,
+        leaf_hash_params: &<P::LeafHash as CRHSchemeGadget<MP::LeafHash, F>>::ParametersVar,
+        two_to_one_hash_params: &<P::TwoToOneHash as TwoToOneCRHSchemeGadget<
+            MP::TwoToOneHash,
+            F,
+        >>::ParametersVar,
+        old_leaf: &P::Leaf,
+        new_leaf: &P::Leaf,
+        index: &FpVar<F>,
+    ) -> Result<(P::InnerDigest, P::InnerDigest), SynthesisError> {
+        assert_eq!(self.path.len(), (P::HEIGHT - 1) as usize);
+        // Check that the hash of the given leaf matches the leaf hash in the membership
+        // proof.
+        //let new_leaf_bits = new_leaf.to_bytes()?;
+        //let new_leaf_hash = CRHVar::hash_bytes(parameters, &new_leaf_bits)?;
+
+        let old_heaf_hash = <P::LeafHash as CRHSchemeGadget<MP::LeafHash, F>>::evaluate(
+            leaf_hash_params,
+            old_leaf,
+        )?;
+        let new_leaf_hash = <P::LeafHash as CRHSchemeGadget<MP::LeafHash, F>>::evaluate(
+            leaf_hash_params,
+            new_leaf,
+        )?;
+
+        // Check levels between leaf level and root of the new tree.
+        let mut old_hash = old_heaf_hash;
+        let mut new_hash = new_leaf_hash;
+        let index_bits = index.to_bits_le()?;
+        for (neighbor, neighbor_is_left) in self.path.iter().zip(&index_bits) {
+            let old_left = neighbor_is_left.select(neighbor, &old_hash)?;
+            let old_right = old_hash + neighbor - &old_left;
+            let new_left = neighbor_is_left.select(neighbor, &new_hash)?;
+            let new_right = new_hash + neighbor - &new_left;
+
+            old_hash = <P::TwoToOneHash as TwoToOneCRHSchemeGadget<MP::TwoToOneHash, F>>::evaluate(
+                two_to_one_hash_params,
+                &old_left,
+                &old_right,
+            )?;
+            new_hash = <P::TwoToOneHash as TwoToOneCRHSchemeGadget<MP::TwoToOneHash, F>>::evaluate(
+                two_to_one_hash_params,
+                &new_left,
+                &new_right,
+            )?;
+        }
+        Ok((old_hash, new_hash))
+    }
+
     /// check a modifying proof
     pub fn check_update(
         &self,
@@ -245,6 +295,7 @@ impl<
         >>::ParametersVar,
         old_root: &P::InnerDigest,
         new_root: &P::InnerDigest,
+        old_leaf: &P::Leaf,
         new_leaf: &P::Leaf,
         index: &FpVar<F>,
     ) -> Result<(), SynthesisError> {
@@ -253,6 +304,7 @@ impl<
             two_to_one_hash_params,
             old_root,
             new_root,
+            old_leaf,
             new_leaf,
             index,
             &Boolean::Constant(true),
@@ -269,120 +321,21 @@ impl<
         >>::ParametersVar,
         old_root: &P::InnerDigest,
         new_root: &P::InnerDigest,
+        old_leaf: &P::Leaf,
         new_leaf: &P::Leaf,
         index: &FpVar<F>,
         should_enforce: &Boolean<F>,
     ) -> Result<(), SynthesisError> {
-        assert_eq!(self.old_path.len(), (P::HEIGHT - 1) as usize);
-        assert_eq!(self.new_path.len(), (P::HEIGHT - 1) as usize);
-        // Check that the hash of the given leaf matches the leaf hash in the membership
-        // proof.
-        //let new_leaf_bits = new_leaf.to_bytes()?;
-        //let new_leaf_hash = CRHVar::hash_bytes(parameters, &new_leaf_bits)?;
-
-        let new_leaf_hash = <P::LeafHash as CRHSchemeGadget<MP::LeafHash, F>>::evaluate(
+        let (old_hash, new_hash) = self.update_root(
             leaf_hash_params,
-            &new_leaf,
+            two_to_one_hash_params,
+            old_leaf,
+            new_leaf,
+            index,
         )?;
-
-        // Check levels between leaf level and root of the new tree.
-        let mut previous_hash = new_leaf_hash;
-        let index_bits = index.to_bits_le()?;
-        for (i, &(ref left_hash, ref right_hash)) in self.new_path.iter().enumerate() {
-            // Check if the previous_hash matches the correct current hash.
-            let previous_is_left = index_bits[i].clone().not();
-
-            //previous_hash.conditional_enforce_equal(
-            //    &CRHVar::OutputVar::conditionally_select(&previous_is_left, left_hash, right_hash)?,
-            //    should_enforce,
-            //)?;
-
-            previous_hash.conditional_enforce_equal(
-                &<P::LeafHash as CRHSchemeGadget<MP::LeafHash, F>>::OutputVar::conditionally_select(
-                    &previous_is_left,
-                    left_hash,
-                    right_hash,
-                )?,
-                should_enforce,
-            )?;
-
-            previous_hash =
-                <P::TwoToOneHash as TwoToOneCRHSchemeGadget<MP::TwoToOneHash, F>>::evaluate(
-                    two_to_one_hash_params,
-                    left_hash,
-                    right_hash,
-                )?;
-            //previous_hash = hash_inner_node_gadget::<P::H, CRHVar, ConstraintF>(
-            //    parameters, left_hash, right_hash,
-            //)?;
-        }
-
-        new_root.conditional_enforce_equal(&previous_hash, should_enforce)?;
-
-        let mut old_path_iter = self.old_path.iter();
-        let old_path_first_entry = old_path_iter.next().unwrap();
-
-        previous_hash =
-            <P::TwoToOneHash as TwoToOneCRHSchemeGadget<MP::TwoToOneHash, F>>::evaluate(
-                two_to_one_hash_params,
-                &old_path_first_entry.0,
-                &old_path_first_entry.1,
-            )?;
-        //previous_hash = hash_inner_node_gadget::<P::H, CRHVar, ConstraintF>(
-        //    parameters,
-        //    &old_path_first_entry.0,
-        //    &old_path_first_entry.1,
-        //)?;
-
-        let mut current_loc = 1;
-        loop {
-            let pair = old_path_iter.next();
-
-            match pair {
-                Some((left_hash, right_hash)) => {
-                    // Check if the previous_hash matches the correct current hash.
-                    let previous_is_left = index_bits[current_loc].clone().not();
-
-                    previous_hash.conditional_enforce_equal(
-                        &<P::LeafHash as CRHSchemeGadget<MP::LeafHash, F>>::OutputVar::conditionally_select(
-                            &previous_is_left,
-                            left_hash,
-                            right_hash,
-                        )?,
-                        should_enforce,
-                    )?;
-
-                    previous_hash = <P::TwoToOneHash as TwoToOneCRHSchemeGadget<
-                        MP::TwoToOneHash,
-                        F,
-                    >>::evaluate(
-                        two_to_one_hash_params, left_hash, right_hash
-                    )?;
-                    //previous_hash = hash_inner_node_gadget::<P::H, CRHVar, ConstraintF>(
-                    //    parameters, left_hash, right_hash,
-                    //)?;
-                }
-                None => break,
-            }
-            current_loc += 1;
-        }
-
-        old_path_iter = self.old_path.iter();
-        for (i, &(ref left_hash, ref right_hash)) in self.new_path.iter().enumerate() {
-            // Check if the previous_hash matches the correct current hash.
-            let previous_is_left = index_bits[i].clone().not();
-            let previous_is_right = previous_is_left.clone().not();
-
-            let old_path_corresponding_entry = old_path_iter.next().unwrap();
-
-            right_hash
-                .conditional_enforce_equal(&old_path_corresponding_entry.1, &previous_is_left)?;
-
-            left_hash
-                .conditional_enforce_equal(&old_path_corresponding_entry.0, &previous_is_right)?;
-        }
-
-        old_root.conditional_enforce_equal(&previous_hash, should_enforce)
+        old_root.conditional_enforce_equal(&old_hash, should_enforce)?;
+        new_root.conditional_enforce_equal(&new_hash, should_enforce)?;
+        Ok(())
     }
 }
 
@@ -426,38 +379,11 @@ impl<MP: SparseConfig, F: PrimeField, P: SparseConfigGadget<MP, F>>
         let ns = cs.into();
         let cs = ns.cs();
 
-        let mut old_path = Vec::new();
-
         let t = f()?;
-        let paths = t.borrow();
-        for &(ref l, ref r) in paths.old_path.path.iter() {
-            let l_hash = P::InnerDigest::new_variable(
-                ark_relations::ns!(cs, "old_path_l_child"),
-                || Ok(l.clone()),
-                mode,
-            )?;
-            let r_hash = P::InnerDigest::new_variable(
-                ark_relations::ns!(cs, "old_path_r_child"),
-                || Ok(r.clone()),
-                mode,
-            )?;
-            old_path.push((l_hash, r_hash));
-        }
-        let mut new_path = Vec::new();
-        for &(ref l, ref r) in paths.new_path.path.iter() {
-            let l_hash = P::InnerDigest::new_variable(
-                ark_relations::ns!(cs, "new_path_l_child"),
-                || Ok(l.clone()),
-                mode,
-            )?;
-            let r_hash = P::InnerDigest::new_variable(
-                ark_relations::ns!(cs, "new_path_r_child"),
-                || Ok(r.clone()),
-                mode,
-            )?;
-            new_path.push((l_hash, r_hash));
-        }
-        Ok(MerkleSparseTreeTwoPathsVar { old_path, new_path })
+        let MerkleSparseTreeTwoPaths { path } = t.borrow();
+        Ok(MerkleSparseTreeTwoPathsVar {
+            path: Vec::new_variable(cs, || Ok(&path[..]), mode)?,
+        })
     }
 }
 
@@ -589,7 +515,15 @@ mod test {
             let new_root = tree.root.unwrap();
 
             assert!(update_proof
-                .verify(&pp, &pp, &old_root, &new_root, &new_leaf, *i)
+                .verify(
+                    &pp,
+                    &pp,
+                    &old_root,
+                    &new_root,
+                    &old_leaves[i],
+                    &new_leaf,
+                    *i
+                )
                 .unwrap());
             assert!(new_leaf_membership_proof
                 .verify_with_index(&pp, &pp, &new_root, &new_leaf, *i)
@@ -610,7 +544,9 @@ mod test {
                 .unwrap();
 
             // Allocate Leaf
-            let leaf_g =
+            let old_leaf =
+                UTXOVar::new_variable_with_inferred_mode(cs.clone(), || Ok(old_leaves[i])).unwrap();
+            let new_leaf =
                 UTXOVar::new_variable_with_inferred_mode(cs.clone(), || Ok(new_leaf)).unwrap();
             let index_g = FpVar::new_constant(cs.clone(), Fr::from(*i)).unwrap();
 
@@ -641,12 +577,19 @@ mod test {
                     &pp_var,
                     &old_root_gadget,
                     &new_root_gadget,
-                    &leaf_g,
+                    &old_leaf,
+                    &new_leaf,
                     &index_g,
                 )
                 .unwrap();
             new_leaf_membership_proof_cw
-                .check_membership_with_index(&pp_var, &pp_var, &new_root_gadget, &leaf_g, &index_g)
+                .check_membership_with_index(
+                    &pp_var,
+                    &pp_var,
+                    &new_root_gadget,
+                    &new_leaf,
+                    &index_g,
+                )
                 .unwrap();
             if !cs.is_satisfied().unwrap() {
                 satisfied = false;

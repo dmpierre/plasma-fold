@@ -22,7 +22,7 @@ use crate::{
 
 use super::{UTXOTreeConfig, UTXO};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct UTXOVar<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>> {
     pub amount: FpVar<F>,
     pub pk: PublicKeyVar<C, CVar>,
@@ -52,6 +52,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct UTXOTreeConfigGadget<F: PrimeField + Absorb, C: CurveGroup, CVar: CurveVar<C, F>> {
     _f: PhantomData<F>,
     _c: PhantomData<C>,
