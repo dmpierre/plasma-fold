@@ -260,7 +260,208 @@ pub fn test_send_and_receive_transaction() {
 }
 
 #[wasm_bindgen_test]
-pub fn test_lower_block_number() {}
+pub fn test_lower_block_number() {
+    let mut rng = thread_rng();
+    let cs = ConstraintSystem::<Fr>::new_ref();
+    let pp = poseidon_canonical_config();
+    let pp_var = CRHParametersVar::new_constant(cs.clone(), pp.clone()).unwrap();
+
+    let sender = User::new(&mut rng, 42);
+    let receiver = User::new(&mut rng, 43);
+
+    let sender_pk_hash = PublicKeyCRH::evaluate(&pp, sender.keypair.pk).unwrap();
+
+    let transaction = make_tx(&sender, &receiver);
+    // Vec of [(transaction, index in tx tree)]
+    let mut transactions = Vec::from([(transaction, 2)]);
+    pad_transaction_vec(&mut transactions);
+    let transaction_tree = make_tx_tree(&pp, &transactions);
+    let transaction_inclusion_proofs = get_tx_inclusion_proofs(&transactions, &transaction_tree);
+
+    let signer_tree = make_signer_tree(&pp, &Vec::from([sender.clone()]));
+    let signers_ids = Vec::from([Some(sender.id)]);
+    let signer_pk_inclusion_proofs =
+        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree);
+
+    let sender_circuit = get_client_circuit(&pp_var);
+
+    let block = Block {
+        utxo_tree_root: Fr::ZERO,
+        tx_tree_root: transaction_tree.root(),
+        signer_tree_root: signer_tree.root(),
+        signers: signers_ids,
+        number: Fr::ONE, // NOTE: processed block number
+    };
+
+    let sender_aux = UserAux {
+        transaction_inclusion_proofs,
+        signer_pk_inclusion_proofs,
+        block: block.clone(),
+        transactions,
+        pk: sender.keypair.pk,
+    };
+
+    let sender_aux_var = UserAuxVar::new_witness(cs.clone(), || Ok(sender_aux.clone())).unwrap();
+
+    let sender_state = Vec::from([
+        Fr::from(1000),
+        Fr::ZERO,
+        sender_pk_hash,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::from(10), // NOTE: prev block number will be greater
+        Fr::ZERO,
+    ]);
+    let sender_state_var = get_state_as_var(cs.clone(), sender_state.clone());
+
+    let _ = sender_circuit
+        .update_balance(cs.clone(), sender_state_var, sender_aux_var)
+        .unwrap();
+
+    assert_eq!(cs.is_satisfied().unwrap(), false);
+}
 
 #[wasm_bindgen_test]
-pub fn test_lower_transaction_index() {}
+pub fn test_lower_transaction_index() {
+    let mut rng = thread_rng();
+    let cs = ConstraintSystem::<Fr>::new_ref();
+    let pp = poseidon_canonical_config();
+    let pp_var = CRHParametersVar::new_constant(cs.clone(), pp.clone()).unwrap();
+
+    let sender = User::new(&mut rng, 42);
+    let receiver = User::new(&mut rng, 43);
+
+    let sender_pk_hash = PublicKeyCRH::evaluate(&pp, sender.keypair.pk).unwrap();
+
+    let transaction_a = make_tx(&sender, &receiver);
+    let transaction_b = make_tx(&sender, &receiver);
+
+    // Vec of [(transaction, index in tx tree)]
+    // NOTE: a transaction with a higher index precedes a transaction with a lower one
+    let mut transactions = Vec::from([(transaction_b, 10), (transaction_a, 2)]);
+    pad_transaction_vec(&mut transactions);
+    let transaction_tree = make_tx_tree(&pp, &transactions);
+    let transaction_inclusion_proofs = get_tx_inclusion_proofs(&transactions, &transaction_tree);
+
+    let signer_tree = make_signer_tree(&pp, &Vec::from([sender.clone()]));
+    let signers_ids = Vec::from([Some(sender.id)]);
+    let signer_pk_inclusion_proofs =
+        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree);
+
+    let sender_circuit = get_client_circuit(&pp_var);
+
+    let block = Block {
+        utxo_tree_root: Fr::ZERO,
+        tx_tree_root: transaction_tree.root(),
+        signer_tree_root: signer_tree.root(),
+        signers: signers_ids,
+        number: Fr::ONE,
+    };
+
+    let sender_aux = UserAux {
+        transaction_inclusion_proofs,
+        signer_pk_inclusion_proofs,
+        block: block.clone(),
+        transactions,
+        pk: sender.keypair.pk,
+    };
+
+    let sender_aux_var = UserAuxVar::new_witness(cs.clone(), || Ok(sender_aux.clone())).unwrap();
+
+    let sender_state = Vec::from([
+        Fr::from(1000),
+        Fr::ZERO,
+        sender_pk_hash,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+    ]);
+    let sender_state_var = get_state_as_var(cs.clone(), sender_state.clone());
+
+    let _ = sender_circuit
+        .update_balance(cs.clone(), sender_state_var, sender_aux_var)
+        .unwrap();
+
+    assert_eq!(cs.is_satisfied().unwrap(), false);
+}
+
+#[wasm_bindgen_test]
+pub fn test_stricly_lower_transaction_index() {
+    let mut rng = thread_rng();
+    let cs = ConstraintSystem::<Fr>::new_ref();
+    let pp = poseidon_canonical_config();
+    let pp_var = CRHParametersVar::new_constant(cs.clone(), pp.clone()).unwrap();
+
+    let sender = User::new(&mut rng, 42);
+    let receiver = User::new(&mut rng, 43);
+
+    let receiver_pk_hash = PublicKeyCRH::evaluate(&pp, receiver.keypair.pk).unwrap();
+
+    let transaction = make_tx(&sender, &receiver);
+
+    // Vec of [(transaction, index in tx tree)]
+    // NOTE: a receiver will fail if trying to replay a block with a valid transaction
+    let mut transactions = Vec::from([(transaction, 2)]);
+    pad_transaction_vec(&mut transactions);
+    let transaction_tree = make_tx_tree(&pp, &transactions);
+    let transaction_inclusion_proofs = get_tx_inclusion_proofs(&transactions, &transaction_tree);
+
+    let signer_tree = make_signer_tree(&pp, &Vec::from([sender.clone()]));
+    let signers_ids = Vec::from([Some(sender.id)]);
+    let signer_pk_inclusion_proofs =
+        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree);
+
+    let receiver_circuit = get_client_circuit(&pp_var);
+
+    let block = Block {
+        utxo_tree_root: Fr::ZERO,
+        tx_tree_root: transaction_tree.root(),
+        signer_tree_root: signer_tree.root(),
+        signers: signers_ids,
+        number: Fr::ONE,
+    };
+
+    let receiver_aux = UserAux {
+        transaction_inclusion_proofs,
+        signer_pk_inclusion_proofs,
+        block: block.clone(),
+        transactions,
+        pk: receiver.keypair.pk,
+    };
+
+    let receiver_aux_var =
+        UserAuxVar::new_witness(cs.clone(), || Ok(receiver_aux.clone())).unwrap();
+
+    let receiver_state = Vec::from([
+        Fr::from(100),
+        Fr::ZERO,
+        receiver_pk_hash,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+    ]);
+    let receiver_state_var = get_state_as_var(cs.clone(), receiver_state.clone());
+
+    let updated_receiver_state = receiver_circuit
+        .update_balance(
+            cs.clone(),
+            receiver_state_var.clone(),
+            receiver_aux_var.clone(),
+        )
+        .unwrap();
+
+    // NOTE: the first circuit update passes correctly
+    assert!(cs.is_satisfied().unwrap());
+    assert_eq!(updated_receiver_state[0].value().unwrap(), Fr::from(200)); // balance
+    assert_eq!(updated_receiver_state[5].value().unwrap(), Fr::ONE); // prev block number
+    assert_eq!(updated_receiver_state[6].value().unwrap(), Fr::from(2)); // prev processed tx index
+                                                                         // is updated
+
+    // NOTE: it fails if the receiver tries to replay the block, with the updated receiver state
+    let _ = receiver_circuit
+        .update_balance(cs.clone(), updated_receiver_state, receiver_aux_var)
+        .unwrap();
+    assert_eq!(cs.is_satisfied().unwrap(), false);
+}

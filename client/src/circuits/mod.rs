@@ -84,6 +84,7 @@ pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
     pub pk: PublicKey<C>,
 }
 
+#[derive(Clone)]
 pub struct UserAuxVar<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>> {
     pub transaction_inclusion_proofs: Vec<
         MerkleSparseTreePathVar<
@@ -200,7 +201,6 @@ impl<
         // ensure the current processed block number is equal or greater than the previous block
         let _ = &prev_block_number.enforce_cmp(&aux.block.number, Ordering::Less, true)?;
 
-        // transaction processing
         // if prev_block_hash != currently_processed_block -> currently processed tx index should
         // be reset to 0
         let processing_same_block = block_hash.is_eq(&prev_block_hash)?;
@@ -224,10 +224,9 @@ impl<
             let transaction_hash = TransactionVarCRH::evaluate(&self.pp, &transaction)?;
             let is_regular_transaction = transaction_hash.is_neq(&dummy_transaction_hash)?;
 
-            // if prev_block_hash == currently_processed_block -> currently processed tx index should
-            // be equal or greater than the next authorized tx index
+            // prev tx index should be strictly lower than the currently processed transaction
             let prev_tx_index_is_lower =
-                &prev_processed_tx_index.is_cmp(&transaction_index, Ordering::Less, true)?;
+                &prev_processed_tx_index.is_cmp(&transaction_index, Ordering::Less, false)?;
             prev_tx_index_is_lower
                 .conditional_enforce_equal(&Boolean::Constant(true), &is_regular_transaction)?;
 
