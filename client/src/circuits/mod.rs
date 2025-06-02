@@ -35,8 +35,7 @@ use std::marker::PhantomData;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{eq::EqGadget, fields::fp::FpVar, groups::CurveVar};
 
-use crate::N_TX_PER_FOLD_STEP;
-
+#[derive(Clone)]
 pub struct UserCircuit<
     F: PrimeField + Absorb,
     C: CurveGroup,
@@ -44,6 +43,7 @@ pub struct UserCircuit<
     H: TwoToOneCRHScheme,
     T: TwoToOneCRHSchemeGadget<H, F>,
     A: Accumulator<F, H, T>,
+    const N_TX_PER_FOLD_STEP: usize,
 > {
     _a: PhantomData<A>,
     _f: PhantomData<F>,
@@ -60,7 +60,8 @@ impl<
         H: TwoToOneCRHScheme,
         T: TwoToOneCRHSchemeGadget<H, F>,
         A: Accumulator<F, H, T>,
-    > UserCircuit<F, C, CVar, H, T, A>
+        const N_TX_PER_FOLD_STEP: usize,
+    > UserCircuit<F, C, CVar, H, T, A, N_TX_PER_FOLD_STEP>
 {
     pub fn new(acc_pp: T::ParametersVar, pp: CRHParametersVar<F>) -> Self {
         UserCircuit {
@@ -74,7 +75,7 @@ impl<
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
     pub transaction_inclusion_proofs: Vec<MerkleSparseTreePath<TransactionTreeConfig<C>>>,
     pub signer_pk_inclusion_proofs: Vec<MerkleSparseTreePath<SignerTreeConfig<C>>>,
@@ -84,7 +85,7 @@ pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
     pub pk: PublicKey<C>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UserAuxVar<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>> {
     pub transaction_inclusion_proofs: Vec<
         MerkleSparseTreePathVar<
@@ -153,7 +154,8 @@ impl<
         H: TwoToOneCRHScheme,
         T: TwoToOneCRHSchemeGadget<H, F>,
         A: Accumulator<F, H, T>,
-    > UserCircuit<F, C, CVar, H, T, A>
+        const N_TX_PER_FOLD_STEP: usize,
+    > UserCircuit<F, C, CVar, H, T, A, N_TX_PER_FOLD_STEP>
 {
     pub fn update_balance(
         &self,
