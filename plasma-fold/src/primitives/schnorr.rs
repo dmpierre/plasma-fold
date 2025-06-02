@@ -55,7 +55,7 @@ impl Schnorr {
     pub fn verify<C: CurveGroup<BaseField: PrimeField + Absorb>>(
         pp: &PoseidonConfig<C::BaseField>,
         pk: &C,
-        message: C::BaseField,
+        message: &[C::BaseField],
         (s, e): (C::ScalarField, C::ScalarField),
     ) -> Result<bool, Error> {
         let (x, y) = (C::generator().mul(s) + pk.mul(e))
@@ -63,7 +63,7 @@ impl Schnorr {
             .xy()
             .unwrap_or_default();
 
-        let h = CRH::evaluate(pp, [x, y, message])?;
+        let h = CRH::evaluate(pp, [&[x, y], message].concat())?;
         let mut h_bits = h.into_bigint().to_bits_le();
         h_bits.truncate(C::ScalarField::MODULUS_BIT_SIZE as usize);
         let h = <C::ScalarField as PrimeField>::BigInt::from_bits_le(&h_bits);
@@ -291,7 +291,7 @@ mod tests {
         let (sk, pk) = Schnorr::key_gen::<Projective>(rng);
         let m = Fr::rand(rng);
         let (s, e) = Schnorr::sign::<Projective>(&pp, sk, &[m], rng).unwrap();
-        assert!(Schnorr::verify(&pp, &pk, m, (s, e)).unwrap());
+        assert!(Schnorr::verify(&pp, &pk, &[m], (s, e)).unwrap());
     }
 
     #[test]
@@ -305,7 +305,7 @@ mod tests {
         let (sk, pk) = Schnorr::key_gen::<Projective>(rng);
         let m = Fr::rand(rng);
         let (s, e) = Schnorr::sign::<Projective>(&pp, sk, &[m], rng).unwrap();
-        assert!(Schnorr::verify(&pp, &pk, m, (s, e)).unwrap());
+        assert!(Schnorr::verify(&pp, &pk, &[m], (s, e)).unwrap());
 
         let pp = CRHParametersVar::new_constant(cs.clone(), pp).unwrap();
         let pk = GVar::new_witness(cs.clone(), || Ok(pk)).unwrap();

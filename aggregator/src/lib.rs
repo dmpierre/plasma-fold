@@ -118,11 +118,8 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
         for (i, (sender, pk, sig)) in inputs.into_iter().enumerate() {
             let tx = &self.transactions[i];
 
-            let hash = TransactionCRH::evaluate(&self.config, tx)
-                .map_err(|_| AggregatorError::TransactionCRHError)?;
-
             if pk
-                .verify_signature(&self.config, hash, &sig.unwrap_or_default())
+                .verify_signature(&self.config, &Into::<Vec<_>>::into(tx), &sig.unwrap_or_default())
                 .map_err(|_| AggregatorError::SignatureError)?
                 || sender == ROLLUP_CONTRACT_ID
             {

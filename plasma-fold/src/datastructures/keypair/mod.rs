@@ -62,7 +62,7 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> PublicKey<C> {
     pub fn verify_signature(
         &self,
         pp: &PoseidonConfig<C::BaseField>,
-        message: C::BaseField,
+        message: &[C::BaseField],
         Signature { s, e }: &Signature<C::ScalarField>,
     ) -> Result<bool, Error> {
         Schnorr::verify::<C>(pp, &self.key, message, (*s, *e))
