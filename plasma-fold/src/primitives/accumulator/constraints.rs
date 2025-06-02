@@ -2,12 +2,12 @@ use std::marker::PhantomData;
 
 use ark_crypto_primitives::{
     crh::{
-        poseidon::constraints::{CRHParametersVar, TwoToOneCRHGadget},
+        poseidon::{constraints::{CRHParametersVar, TwoToOneCRHGadget}, TwoToOneCRH},
         sha256::{
             constraints::{Sha256Gadget, UnitVar},
             Sha256,
         },
-        CRHScheme, TwoToOneCRHScheme, TwoToOneCRHSchemeGadget,
+        TwoToOneCRHScheme, TwoToOneCRHSchemeGadget,
     },
     sponge::Absorb,
 };
@@ -27,14 +27,9 @@ pub struct Sha256AccumulatorVar<F: PrimeField> {
     _f: PhantomData<F>,
 }
 
-impl<
-        F: PrimeField,
-        H: TwoToOneCRHScheme,
-        T: TwoToOneCRHSchemeGadget<H, F, ParametersVar = UnitVar<F>>,
-    > Accumulator<F, H, T> for Sha256AccumulatorVar<F>
-{
+impl<F: PrimeField> Accumulator<F, Sha256, Sha256Gadget<F>> for Sha256AccumulatorVar<F> {
     fn update(
-        pp: &T::ParametersVar,
+        pp: &UnitVar<F>,
         prev: &FpVar<F>,
         value: &FpVar<F>,
     ) -> Result<FpVar<F>, SynthesisError> {
@@ -55,14 +50,11 @@ pub struct PoseidonAccumulatorVar<F: PrimeField> {
     _f: PhantomData<F>,
 }
 
-impl<
-        F: PrimeField + Absorb,
-        H: TwoToOneCRHScheme,
-        T: TwoToOneCRHSchemeGadget<H, F, ParametersVar = CRHParametersVar<F>>,
-    > Accumulator<F, H, T> for PoseidonAccumulatorVar<F>
+impl<F: PrimeField + Absorb> Accumulator<F, TwoToOneCRH<F>, TwoToOneCRHGadget<F>>
+    for PoseidonAccumulatorVar<F>
 {
     fn update(
-        pp: &T::ParametersVar,
+        pp: &CRHParametersVar<F>,
         prev: &FpVar<F>,
         value: &FpVar<F>,
     ) -> Result<FpVar<F>, SynthesisError> {
