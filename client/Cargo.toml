@@ -25,6 +25,7 @@ folding-schemes = { workspace = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"
+web-time = "1.1.0"
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.

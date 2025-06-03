@@ -75,14 +75,46 @@ impl<
     }
 }
 
-#[derive(Clone, Default, Debug)]
-pub struct UserAux<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> {
+#[derive(Clone, Debug)]
+pub struct UserAux<
+    F: PrimeField + Absorb,
+    C: CurveGroup<BaseField = F>,
+    const N_TX_PER_FOLD_STEP: usize,
+> {
     pub transaction_inclusion_proofs: Vec<MerkleSparseTreePath<TransactionTreeConfig<C>>>,
     pub signer_pk_inclusion_proofs: Vec<MerkleSparseTreePath<SignerTreeConfig<C>>>,
     pub block: Block<F>,
     // (transaction, transaction's index within the transaction tree)
     pub transactions: Vec<(Transaction<C>, u64)>,
     pub pk: PublicKey<C>,
+}
+
+impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, const N_TX_PER_FOLD_STEP: usize> Default
+    for UserAux<F, C, N_TX_PER_FOLD_STEP>
+{
+    fn default() -> Self {
+        let transaction_inclusion_proofs = (0..N_TX_PER_FOLD_STEP)
+            .map(|_| MerkleSparseTreePath::default())
+            .collect::<Vec<MerkleSparseTreePath<TransactionTreeConfig<C>>>>();
+
+        let signer_pk_inclusion_proofs = (0..N_TX_PER_FOLD_STEP)
+            .map(|_| MerkleSparseTreePath::default())
+            .collect::<Vec<MerkleSparseTreePath<SignerTreeConfig<C>>>>();
+
+        let block = Block::default();
+
+        let transactions = (0..N_TX_PER_FOLD_STEP)
+            .map(|_| (Transaction::default(), 0 as u64))
+            .collect::<Vec<_>>();
+
+        Self {
+            transaction_inclusion_proofs,
+            signer_pk_inclusion_proofs,
+            block,
+            transactions,
+            pk: PublicKey::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -102,10 +134,14 @@ pub struct UserAuxVar<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar
     pub pk: PublicKeyVar<C, CVar>,
 }
 
-impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
-    AllocVar<UserAux<F, C>, F> for UserAuxVar<F, C, CVar>
+impl<
+        F: PrimeField + Absorb,
+        C: CurveGroup<BaseField = F>,
+        CVar: CurveVar<C, F>,
+        const N_TX_PER_FOLD_STEP: usize,
+    > AllocVar<UserAux<F, C, N_TX_PER_FOLD_STEP>, F> for UserAuxVar<F, C, CVar>
 {
-    fn new_variable<T: std::borrow::Borrow<UserAux<F, C>>>(
+    fn new_variable<T: std::borrow::Borrow<UserAux<F, C, N_TX_PER_FOLD_STEP>>>(
         cs: impl Into<ark_relations::r1cs::Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,

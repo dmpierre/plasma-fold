@@ -3,7 +3,7 @@ use ark_ff::PrimeField;
 pub mod constraints;
 
 // contains the roots of utxo, transaction, signer, deposit and withdraw trees
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct Block<F: PrimeField> {
     pub utxo_tree_root: F,
     pub tx_tree_root: F,

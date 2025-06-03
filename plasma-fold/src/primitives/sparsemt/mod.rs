@@ -58,7 +58,7 @@ pub struct MerkleSparseTree<P: SparseConfig> {
 
 /// Stores the hashes of a particular path (in order) from leaf to root.
 /// Our path `is_left_child()` if the boolean in `path` is true.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MerkleSparseTreePath<P: SparseConfig> {
     pub path: Vec<(P::InnerDigest, P::InnerDigest)>,
 }

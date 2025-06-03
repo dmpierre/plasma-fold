@@ -3,7 +3,7 @@ use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
 
 use super::Block;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BlockVar<F: PrimeField> {
     pub utxo_tree_root: FpVar<F>,
     pub tx_tree_root: FpVar<F>,

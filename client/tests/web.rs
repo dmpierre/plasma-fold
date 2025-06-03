@@ -1,4 +1,6 @@
+use ark_bn254::Bn254;
 use ark_bn254::Fr;
+use ark_bn254::G1Projective as Projective2;
 use ark_crypto_primitives::{
     crh::{
         poseidon::{
@@ -16,9 +18,20 @@ use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 use ark_std::rand::thread_rng;
 use client::{
     circuits::{UserAux, UserAuxVar, UserCircuit},
-    N_TX_PER_FOLD_STEP,
+    ClientCircuitPoseidon,
 };
-use folding_schemes::{folding::traits::Dummy, transcript::poseidon::poseidon_canonical_config};
+use folding_schemes::commitment::kzg::KZG;
+use folding_schemes::commitment::pedersen::Pedersen;
+use folding_schemes::FoldingScheme;
+use folding_schemes::{
+    folding::{
+        nova::{Nova, PreprocessorParam},
+        traits::Dummy,
+    },
+    frontend::FCircuit,
+    transcript::poseidon::poseidon_canonical_config,
+};
+
 use plasma_fold::{
     datastructures::{
         block::Block,
@@ -34,7 +47,9 @@ use plasma_fold::{
     },
 };
 use std::collections::BTreeMap;
+use std::time::Duration;
 use wasm_bindgen_test::*;
+use web_time::Instant;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -56,13 +71,16 @@ pub fn make_tx(sender: &User<Projective>, receiver: &User<Projective>) -> Transa
     }
 }
 
-pub fn pad_transaction_vec(transaction_vec: &mut Vec<(Transaction<Projective>, u64)>) {
-    while transaction_vec.len() < N_TX_PER_FOLD_STEP {
+pub fn pad_transaction_vec(
+    transaction_vec: &mut Vec<(Transaction<Projective>, u64)>,
+    n_transactions: usize,
+) {
+    while transaction_vec.len() < n_transactions {
         transaction_vec.push((Transaction::dummy(()), 0))
     }
 }
 
-pub fn get_client_circuit(
+pub fn get_client_circuit<const BATCH_SIZE: usize>(
     pp_var: &CRHParametersVar<Fr>,
 ) -> UserCircuit<
     Fr,
@@ -71,6 +89,7 @@ pub fn get_client_circuit(
     TwoToOneCRH<Fr>,
     TwoToOneCRHGadget<Fr>,
     PoseidonAccumulatorVar<Fr>,
+    BATCH_SIZE,
 > {
     UserCircuit::<
         Fr,
@@ -79,6 +98,7 @@ pub fn get_client_circuit(
         TwoToOneCRH<Fr>,
         TwoToOneCRHGadget<Fr>,
         PoseidonAccumulatorVar<Fr>,
+        BATCH_SIZE,
     >::new(pp_var.clone(), pp_var.clone())
 }
 
@@ -96,12 +116,13 @@ pub fn make_tx_tree(
 pub fn get_tx_inclusion_proofs(
     transactions: &Vec<(Transaction<Projective>, u64)>,
     transaction_tree: &TransactionTree<TransactionTreeConfig<Projective>>,
+    n_transactions: usize,
 ) -> Vec<MerkleSparseTreePath<TransactionTreeConfig<Projective>>> {
     let mut tx_inclusion_proofs = Vec::new();
     for (tx, idx) in transactions {
         tx_inclusion_proofs.push(transaction_tree.generate_proof(*idx, tx).unwrap());
     }
-    while tx_inclusion_proofs.len() < N_TX_PER_FOLD_STEP {
+    while tx_inclusion_proofs.len() < n_transactions {
         tx_inclusion_proofs.push(
             transaction_tree
                 .generate_proof(transactions[0].1, &transactions[0].0)
@@ -131,6 +152,7 @@ pub fn make_signer_tree(
 pub fn get_signer_inclusion_proofs(
     signers: &Vec<User<Projective>>,
     tree: &SignerTree<SignerTreeConfig<Projective>>,
+    n_transactions: usize,
 ) -> Vec<MerkleSparseTreePath<SignerTreeConfig<Projective>>> {
     let mut signer_pk_inclusion_proofs = Vec::new();
     for signer in signers {
@@ -140,7 +162,7 @@ pub fn get_signer_inclusion_proofs(
         );
     }
     // pad the remaining inclusion proofs with same proof
-    while signer_pk_inclusion_proofs.len() < N_TX_PER_FOLD_STEP {
+    while signer_pk_inclusion_proofs.len() < n_transactions {
         signer_pk_inclusion_proofs.push(
             tree.generate_proof(signers[0].id as u64, &signers[0].keypair.pk)
                 .unwrap(),
@@ -152,6 +174,7 @@ pub fn get_signer_inclusion_proofs(
 
 #[wasm_bindgen_test]
 pub fn test_send_and_receive_transaction() {
+    const TEST_BATCH_SIZE: usize = 8;
     let mut rng = thread_rng();
     let cs = ConstraintSystem::<Fr>::new_ref();
     let pp = poseidon_canonical_config();
@@ -165,17 +188,18 @@ pub fn test_send_and_receive_transaction() {
     let transaction = make_tx(&sender, &receiver);
     // Vec of [(transaction, index in tx tree)]
     let mut transactions = Vec::from([(transaction, 2)]);
-    pad_transaction_vec(&mut transactions);
+    pad_transaction_vec(&mut transactions, TEST_BATCH_SIZE);
     let transaction_tree = make_tx_tree(&pp, &transactions);
-    let transaction_inclusion_proofs = get_tx_inclusion_proofs(&transactions, &transaction_tree);
+    let transaction_inclusion_proofs =
+        get_tx_inclusion_proofs(&transactions, &transaction_tree, TEST_BATCH_SIZE);
 
     let signer_tree = make_signer_tree(&pp, &Vec::from([sender.clone()]));
     let signers_ids = Vec::from([Some(sender.id)]);
     let signer_pk_inclusion_proofs =
-        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree);
+        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree, TEST_BATCH_SIZE);
 
-    let sender_circuit = get_client_circuit(&pp_var);
-    let receiver_circuit = get_client_circuit(&pp_var);
+    let sender_circuit = get_client_circuit::<TEST_BATCH_SIZE>(&pp_var);
+    let receiver_circuit = get_client_circuit::<TEST_BATCH_SIZE>(&pp_var);
 
     let block = Block {
         utxo_tree_root: Fr::ZERO,
@@ -185,7 +209,7 @@ pub fn test_send_and_receive_transaction() {
         number: Fr::ONE,
     };
 
-    let sender_aux = UserAux {
+    let sender_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
         transaction_inclusion_proofs,
         signer_pk_inclusion_proofs,
         block: block.clone(),
@@ -224,7 +248,11 @@ pub fn test_send_and_receive_transaction() {
         .update_balance(cs.clone(), sender_state_var, sender_aux_var)
         .unwrap();
     assert!(cs.is_satisfied().unwrap());
-    console_log!("n_constraints sender circuit: {}", cs.num_constraints());
+    console_log!(
+        "batchsize: {}, n_constraints sender circuit: {}",
+        TEST_BATCH_SIZE,
+        cs.num_constraints()
+    );
 
     let expected_block_hash = BlockCRH::evaluate(&pp, block.clone()).unwrap();
 
@@ -261,6 +289,7 @@ pub fn test_send_and_receive_transaction() {
 
 #[wasm_bindgen_test]
 pub fn test_lower_block_number() {
+    const TEST_BATCH_SIZE: usize = 2;
     let mut rng = thread_rng();
     let cs = ConstraintSystem::<Fr>::new_ref();
     let pp = poseidon_canonical_config();
@@ -274,16 +303,17 @@ pub fn test_lower_block_number() {
     let transaction = make_tx(&sender, &receiver);
     // Vec of [(transaction, index in tx tree)]
     let mut transactions = Vec::from([(transaction, 2)]);
-    pad_transaction_vec(&mut transactions);
+    pad_transaction_vec(&mut transactions, TEST_BATCH_SIZE);
     let transaction_tree = make_tx_tree(&pp, &transactions);
-    let transaction_inclusion_proofs = get_tx_inclusion_proofs(&transactions, &transaction_tree);
+    let transaction_inclusion_proofs =
+        get_tx_inclusion_proofs(&transactions, &transaction_tree, TEST_BATCH_SIZE);
 
     let signer_tree = make_signer_tree(&pp, &Vec::from([sender.clone()]));
     let signers_ids = Vec::from([Some(sender.id)]);
     let signer_pk_inclusion_proofs =
-        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree);
+        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree, TEST_BATCH_SIZE);
 
-    let sender_circuit = get_client_circuit(&pp_var);
+    let sender_circuit = get_client_circuit::<TEST_BATCH_SIZE>(&pp_var);
 
     let block = Block {
         utxo_tree_root: Fr::ZERO,
@@ -293,7 +323,7 @@ pub fn test_lower_block_number() {
         number: Fr::ONE, // NOTE: processed block number
     };
 
-    let sender_aux = UserAux {
+    let sender_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
         transaction_inclusion_proofs,
         signer_pk_inclusion_proofs,
         block: block.clone(),
@@ -323,6 +353,7 @@ pub fn test_lower_block_number() {
 
 #[wasm_bindgen_test]
 pub fn test_lower_transaction_index() {
+    pub const TEST_BATCH_SIZE: usize = 2;
     let mut rng = thread_rng();
     let cs = ConstraintSystem::<Fr>::new_ref();
     let pp = poseidon_canonical_config();
@@ -339,16 +370,17 @@ pub fn test_lower_transaction_index() {
     // Vec of [(transaction, index in tx tree)]
     // NOTE: a transaction with a higher index precedes a transaction with a lower one
     let mut transactions = Vec::from([(transaction_b, 10), (transaction_a, 2)]);
-    pad_transaction_vec(&mut transactions);
+    pad_transaction_vec(&mut transactions, TEST_BATCH_SIZE);
     let transaction_tree = make_tx_tree(&pp, &transactions);
-    let transaction_inclusion_proofs = get_tx_inclusion_proofs(&transactions, &transaction_tree);
+    let transaction_inclusion_proofs =
+        get_tx_inclusion_proofs(&transactions, &transaction_tree, TEST_BATCH_SIZE);
 
     let signer_tree = make_signer_tree(&pp, &Vec::from([sender.clone()]));
     let signers_ids = Vec::from([Some(sender.id)]);
     let signer_pk_inclusion_proofs =
-        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree);
+        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree, TEST_BATCH_SIZE);
 
-    let sender_circuit = get_client_circuit(&pp_var);
+    let sender_circuit = get_client_circuit::<TEST_BATCH_SIZE>(&pp_var);
 
     let block = Block {
         utxo_tree_root: Fr::ZERO,
@@ -358,7 +390,7 @@ pub fn test_lower_transaction_index() {
         number: Fr::ONE,
     };
 
-    let sender_aux = UserAux {
+    let sender_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
         transaction_inclusion_proofs,
         signer_pk_inclusion_proofs,
         block: block.clone(),
@@ -388,6 +420,7 @@ pub fn test_lower_transaction_index() {
 
 #[wasm_bindgen_test]
 pub fn test_stricly_lower_transaction_index() {
+    pub const TEST_BATCH_SIZE: usize = 4;
     let mut rng = thread_rng();
     let cs = ConstraintSystem::<Fr>::new_ref();
     let pp = poseidon_canonical_config();
@@ -403,16 +436,17 @@ pub fn test_stricly_lower_transaction_index() {
     // Vec of [(transaction, index in tx tree)]
     // NOTE: a receiver will fail if trying to replay a block with a valid transaction
     let mut transactions = Vec::from([(transaction, 2)]);
-    pad_transaction_vec(&mut transactions);
+    pad_transaction_vec(&mut transactions, TEST_BATCH_SIZE);
     let transaction_tree = make_tx_tree(&pp, &transactions);
-    let transaction_inclusion_proofs = get_tx_inclusion_proofs(&transactions, &transaction_tree);
+    let transaction_inclusion_proofs =
+        get_tx_inclusion_proofs(&transactions, &transaction_tree, TEST_BATCH_SIZE);
 
     let signer_tree = make_signer_tree(&pp, &Vec::from([sender.clone()]));
     let signers_ids = Vec::from([Some(sender.id)]);
     let signer_pk_inclusion_proofs =
-        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree);
+        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree, TEST_BATCH_SIZE);
 
-    let receiver_circuit = get_client_circuit(&pp_var);
+    let receiver_circuit = get_client_circuit::<TEST_BATCH_SIZE>(&pp_var);
 
     let block = Block {
         utxo_tree_root: Fr::ZERO,
@@ -422,7 +456,7 @@ pub fn test_stricly_lower_transaction_index() {
         number: Fr::ONE,
     };
 
-    let receiver_aux = UserAux {
+    let receiver_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
         transaction_inclusion_proofs,
         signer_pk_inclusion_proofs,
         block: block.clone(),
@@ -464,4 +498,92 @@ pub fn test_stricly_lower_transaction_index() {
         .update_balance(cs.clone(), updated_receiver_state, receiver_aux_var)
         .unwrap();
     assert_eq!(cs.is_satisfied().unwrap(), false);
+}
+
+#[wasm_bindgen_test]
+pub fn test_run_fold_steps() {
+    pub const TEST_BATCH_SIZE: usize = 4;
+    let pp = poseidon_canonical_config();
+    let mut rng = thread_rng();
+
+    let user = User::new(&mut rng, 42);
+    let user_pk_hash = PublicKeyCRH::evaluate(&pp, user.keypair.pk).unwrap();
+
+    let state = Vec::from([
+        Fr::from(2000),
+        Fr::ZERO,
+        user_pk_hash,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+    ]);
+
+    let f_circuit =
+        ClientCircuitPoseidon::<Fr, Projective, GVar, TEST_BATCH_SIZE>::new(pp.clone()).unwrap();
+
+    type N = Nova<
+        Projective2,
+        Projective,
+        ClientCircuitPoseidon<Fr, Projective, GVar, TEST_BATCH_SIZE>,
+        Pedersen<Projective2>,
+        Pedersen<Projective>,
+        false,
+    >;
+
+    let nova_preprocess_params = PreprocessorParam::new(pp.clone(), f_circuit.clone());
+    let nova_params = N::preprocess(&mut rng, &nova_preprocess_params).unwrap();
+    let mut folding_scheme = N::init(&nova_params, f_circuit, state.clone()).unwrap();
+
+    let mut durations = Vec::new();
+    // start at 0 since tx idx 0 is reserved for default transactions in tests
+    for i in 1..=10 {
+        let receiver = User::new(&mut rng, i);
+        let transaction = make_tx(&user, &receiver);
+        let mut transactions = Vec::from([(transaction, (i) as u64)]);
+        pad_transaction_vec(&mut transactions, TEST_BATCH_SIZE);
+        let transaction_tree = make_tx_tree(&pp, &transactions);
+        let transaction_inclusion_proofs =
+            get_tx_inclusion_proofs(&transactions, &transaction_tree, TEST_BATCH_SIZE);
+
+        let signer_tree = make_signer_tree(&pp, &Vec::from([user.clone()]));
+        let signers_ids = Vec::from([Some(user.id)]);
+        let signer_pk_inclusion_proofs =
+            get_signer_inclusion_proofs(&Vec::from([user.clone()]), &signer_tree, TEST_BATCH_SIZE);
+
+        let block = Block {
+            utxo_tree_root: Fr::ZERO,
+            tx_tree_root: transaction_tree.root(),
+            signer_tree_root: signer_tree.root(),
+            signers: signers_ids,
+            number: Fr::from(i),
+        };
+
+        let user_aux = UserAux {
+            transaction_inclusion_proofs,
+            signer_pk_inclusion_proofs,
+            block: block.clone(),
+            transactions,
+            pk: user.keypair.pk,
+        };
+
+        let start = Instant::now();
+        folding_scheme.prove_step(&mut rng, user_aux, None).unwrap();
+        let elapsed = start.elapsed();
+        durations.push(elapsed);
+        console_log!("folding step {}, took: {:?}", i, elapsed);
+    }
+    let total: Duration = durations.iter().sum();
+
+    console_log!(
+        "Average folding step time: {:?}",
+        total / durations.len() as u32
+    );
+
+    let ivc_proof = folding_scheme.ivc_proof();
+    let _ = N::verify(
+        nova_params.1, // Nova's verifier params
+        ivc_proof,
+    )
+    .unwrap();
 }
