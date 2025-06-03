@@ -1,4 +1,3 @@
-use ark_bn254::Bn254;
 use ark_bn254::Fr;
 use ark_bn254::G1Projective as Projective2;
 use ark_crypto_primitives::{
@@ -20,7 +19,6 @@ use client::{
     circuits::{UserAux, UserAuxVar, UserCircuit},
     ClientCircuitPoseidon,
 };
-use folding_schemes::commitment::kzg::KZG;
 use folding_schemes::commitment::pedersen::Pedersen;
 use folding_schemes::FoldingScheme;
 use folding_schemes::{
@@ -32,6 +30,7 @@ use folding_schemes::{
     transcript::poseidon::poseidon_canonical_config,
 };
 
+use js_sys::{Uint8Array, WebAssembly};
 use plasma_fold::{
     datastructures::{
         block::Block,
@@ -48,6 +47,8 @@ use plasma_fold::{
 };
 use std::collections::BTreeMap;
 use std::time::Duration;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
 use web_time::Instant;
 
@@ -552,7 +553,7 @@ pub fn test_run_fold_steps() {
             get_signer_inclusion_proofs(&Vec::from([user.clone()]), &signer_tree, TEST_BATCH_SIZE);
 
         let block = Block {
-            utxo_tree_root: Fr::ZERO,
+            utxo_tree_root: Fr::ONE,
             tx_tree_root: transaction_tree.root(),
             signer_tree_root: signer_tree.root(),
             signers: signers_ids,
@@ -570,14 +571,110 @@ pub fn test_run_fold_steps() {
         let start = Instant::now();
         folding_scheme.prove_step(&mut rng, user_aux, None).unwrap();
         let elapsed = start.elapsed();
+
         durations.push(elapsed);
         console_log!("folding step {}, took: {:?}", i, elapsed);
     }
     let total: Duration = durations.iter().sum();
 
     console_log!(
-        "Average folding step time: {:?}",
+        "Batch size: {}, Average folding step time: {:?}",
+        TEST_BATCH_SIZE,
         total / durations.len() as u32
+    );
+
+    let ivc_proof = folding_scheme.ivc_proof();
+    let _ = N::verify(
+        nova_params.1, // Nova's verifier params
+        ivc_proof,
+    )
+    .unwrap();
+}
+
+pub fn get_current_allocated_bytes() -> u64 {
+    let js_mem = wasm_bindgen::memory();
+    let wasm_mem = js_mem.unchecked_into::<WebAssembly::Memory>();
+    let buffer = wasm_mem.buffer();
+    Uint8Array::new(&buffer).length() as u64
+}
+
+#[wasm_bindgen_test]
+pub fn test_memory_usage() {
+    pub const TEST_BATCH_SIZE: usize = 2;
+    let pp = poseidon_canonical_config();
+    let mut rng = thread_rng();
+
+    let user = User::new(&mut rng, 42);
+    let user_pk_hash = PublicKeyCRH::evaluate(&pp, user.keypair.pk).unwrap();
+
+    type N = Nova<
+        Projective2,
+        Projective,
+        ClientCircuitPoseidon<Fr, Projective, GVar, TEST_BATCH_SIZE>,
+        Pedersen<Projective2>,
+        Pedersen<Projective>,
+        false,
+    >;
+
+    let f_circuit =
+        ClientCircuitPoseidon::<Fr, Projective, GVar, TEST_BATCH_SIZE>::new(pp.clone()).unwrap();
+
+    let nova_preprocess_params = PreprocessorParam::new(pp.clone(), f_circuit.clone());
+    let nova_params = N::preprocess(&mut rng, &nova_preprocess_params).unwrap();
+
+    let state = Vec::from([
+        Fr::from(2000),
+        Fr::ZERO,
+        user_pk_hash,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+    ]);
+
+    let signer_tree = make_signer_tree(&pp, &Vec::from([user.clone()]));
+
+    let mem_length_start = get_current_allocated_bytes();
+
+    let mut folding_scheme = N::init(&nova_params, f_circuit, state.clone()).unwrap();
+
+    let i = 42;
+    let receiver = User::new(&mut rng, i);
+    let transaction = make_tx(&user, &receiver);
+    let mut transactions = Vec::from([(transaction, (i) as u64)]);
+    pad_transaction_vec(&mut transactions, TEST_BATCH_SIZE);
+    let transaction_tree = make_tx_tree(&pp, &transactions);
+    let transaction_inclusion_proofs =
+        get_tx_inclusion_proofs(&transactions, &transaction_tree, TEST_BATCH_SIZE);
+
+    let signers_ids = Vec::from([Some(user.id)]);
+    let signer_pk_inclusion_proofs =
+        get_signer_inclusion_proofs(&Vec::from([user.clone()]), &signer_tree, TEST_BATCH_SIZE);
+
+    let block = Block {
+        utxo_tree_root: Fr::ONE,
+        tx_tree_root: transaction_tree.root(),
+        signer_tree_root: signer_tree.root(),
+        signers: signers_ids,
+        number: Fr::from(i),
+    };
+
+    let user_aux = UserAux {
+        transaction_inclusion_proofs,
+        signer_pk_inclusion_proofs,
+        block: block.clone(),
+        transactions,
+        pk: user.keypair.pk,
+    };
+
+    folding_scheme.prove_step(&mut rng, user_aux, None).unwrap();
+
+    let mem_length_stop = get_current_allocated_bytes();
+
+    console_log!(
+        "batch size: {}, current mem length (kB): {}",
+        TEST_BATCH_SIZE,
+        (mem_length_stop - mem_length_start) / 1024
     );
 
     let ivc_proof = folding_scheme.ivc_proof();
