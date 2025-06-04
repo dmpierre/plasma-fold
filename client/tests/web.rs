@@ -47,7 +47,6 @@ use plasma_fold::{
 };
 use std::collections::BTreeMap;
 use std::time::Duration;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
 use web_time::Instant;
