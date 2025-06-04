@@ -2,11 +2,14 @@
 pub mod tests {
     use ark_bn254::Fr;
     use ark_ff::PrimeField;
+    use ark_grumpkin::constraints::GVar;
     use ark_r1cs_std::alloc::AllocVar;
     use ark_r1cs_std::fields::fp::FpVar;
     use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
-    use ark_serialize::CanonicalSerialize;
+    use ark_serialize::{CanonicalSerialize, Compress};
     use ark_std::rand::thread_rng;
+    use client::ClientCircuitPoseidon;
+    use folding_schemes::arith::Arith;
     use folding_schemes::folding::nova::{ProverParams, VerifierParams};
     use folding_schemes::{
         commitment::pedersen::Pedersen, frontend::FCircuit,
@@ -48,14 +51,17 @@ pub mod tests {
     use ark_grumpkin::Projective as Projective2;
 
     use folding_schemes::folding::nova::*;
-    use folding_schemes::Curve;
 
-    pub fn output_serialized_params() {
-        pub const TEST_BATCH_SIZE: usize = 2;
+    #[test]
+    pub fn test_print_serialized_params() {
+        pub const TEST_BATCH_SIZE: usize = 10;
         let pp = poseidon_canonical_config();
         let mut rng = thread_rng();
 
-        let f_circuit = CubicFCircuit::new(()).unwrap();
+        let f_circuit =
+            ClientCircuitPoseidon::<Fr, Projective2, GVar, TEST_BATCH_SIZE>::new(pp.clone())
+                .unwrap();
+
         let nova_preprocess_params = PreprocessorParam::new(pp.clone(), f_circuit.clone());
         let (pp, vp): (
             ProverParams<Projective, Projective2, Pedersen<Projective>, Pedersen<Projective2>>,
@@ -63,14 +69,25 @@ pub mod tests {
         ) = Nova::<
             Projective,
             Projective2,
-            CubicFCircuit<Fr>,
+            ClientCircuitPoseidon<Fr, Projective2, GVar, TEST_BATCH_SIZE>,
             Pedersen<Projective>,
             Pedersen<Projective2>,
             false,
         >::preprocess(&mut rng, &nova_preprocess_params)
         .unwrap();
 
-        let mut writer = vec![];
-        let pp_size = pp.serialize_compressed(&mut writer).unwrap();
+        let pp_size =
+            pp.serialized_size(Compress::Yes) + pp.poseidon_config.serialized_size(Compress::Yes);
+
+        let vp_size = vp.serialized_size(Compress::Yes)
+            + vp.r1cs.serialized_size(Compress::Yes)
+            + vp.cf_r1cs.serialized_size(Compress::Yes);
+
+        println!(
+            "Batch size: {}, total circuit size: {}, params size: {}",
+            TEST_BATCH_SIZE,
+            vp.r1cs.n_constraints(),
+            pp_size + vp_size
+        );
     }
 }

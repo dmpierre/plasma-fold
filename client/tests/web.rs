@@ -172,9 +172,10 @@ pub fn get_signer_inclusion_proofs(
     signer_pk_inclusion_proofs
 }
 
+pub const TEST_BATCH_SIZE: usize = 10;
+
 #[wasm_bindgen_test]
 pub fn test_send_and_receive_transaction() {
-    const TEST_BATCH_SIZE: usize = 8;
     let mut rng = thread_rng();
     let cs = ConstraintSystem::<Fr>::new_ref();
     let pp = poseidon_canonical_config();
@@ -502,7 +503,6 @@ pub fn test_stricly_lower_transaction_index() {
 
 #[wasm_bindgen_test]
 pub fn test_run_fold_steps() {
-    pub const TEST_BATCH_SIZE: usize = 4;
     let pp = poseidon_canonical_config();
     let mut rng = thread_rng();
 
@@ -599,7 +599,6 @@ pub fn get_current_allocated_bytes() -> u64 {
 
 #[wasm_bindgen_test]
 pub fn test_memory_usage() {
-    pub const TEST_BATCH_SIZE: usize = 2;
     let pp = poseidon_canonical_config();
     let mut rng = thread_rng();
 
@@ -619,7 +618,6 @@ pub fn test_memory_usage() {
         ClientCircuitPoseidon::<Fr, Projective, GVar, TEST_BATCH_SIZE>::new(pp.clone()).unwrap();
 
     let nova_preprocess_params = PreprocessorParam::new(pp.clone(), f_circuit.clone());
-    let nova_params = N::preprocess(&mut rng, &nova_preprocess_params).unwrap();
 
     let state = Vec::from([
         Fr::from(2000),
@@ -633,8 +631,12 @@ pub fn test_memory_usage() {
 
     let signer_tree = make_signer_tree(&pp, &Vec::from([user.clone()]));
 
+    let nova_params = N::preprocess(&mut rng, &nova_preprocess_params).unwrap();
+
     let mem_length_start = get_current_allocated_bytes();
 
+    // avoid taking preprocessing step into account
+    let nova_params = nova_params.clone();
     let mut folding_scheme = N::init(&nova_params, f_circuit, state.clone()).unwrap();
 
     let i = 42;
