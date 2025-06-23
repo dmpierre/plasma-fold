@@ -1,11 +1,10 @@
 [package]
-name = "aggregator"
+name = "mock-contract"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 plasma-fold = { path = "../plasma-fold/" }
-mock-contract = { path = "../mock-contract/" }
 folding-schemes = { workspace = true }
 ark-r1cs-std = { workspace = true }
 ark-ff = { workspace = true }

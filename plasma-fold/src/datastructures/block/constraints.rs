@@ -8,7 +8,7 @@ pub struct BlockVar<F: PrimeField> {
     pub utxo_tree_root: FpVar<F>,
     pub tx_tree_root: FpVar<F>,
     pub signer_tree_root: FpVar<F>,
-    pub number: FpVar<F>,
+    pub height: FpVar<F>,
 }
 
 impl<F: PrimeField> AllocVar<Block<F>, F> for BlockVar<F> {
@@ -24,12 +24,12 @@ impl<F: PrimeField> AllocVar<Block<F>, F> for BlockVar<F> {
         let tx_tree_root = FpVar::new_variable(cs.clone(), || Ok(block.tx_tree_root), mode)?;
         let signer_tree_root =
             FpVar::new_variable(cs.clone(), || Ok(block.signer_tree_root), mode)?;
-        let number = FpVar::new_variable(cs.clone(), || Ok(block.number), mode)?;
+        let height = FpVar::new_variable(cs.clone(), || Ok(F::from(block.height as u64)), mode)?;
         Ok(BlockVar {
             utxo_tree_root,
             tx_tree_root,
             signer_tree_root,
-            number,
+            height,
         })
     }
 }

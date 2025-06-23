@@ -1,4 +1,11 @@
-use std::collections::{BTreeMap, HashMap};
+#![feature(test)]
+#![feature(iter_array_chunks)]
+extern crate test;
+
+use std::{
+    array::from_fn,
+    collections::{BTreeMap, HashMap},
+};
 
 use ark_crypto_primitives::{
     crh::CRHScheme,
@@ -8,6 +15,7 @@ use ark_crypto_primitives::{
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use errors::AggregatorError;
+use mock_contract::MockContract;
 use plasma_fold::{
     datastructures::{
         block::Block,
@@ -17,10 +25,16 @@ use plasma_fold::{
         transaction::{Transaction, TransactionTree, TransactionTreeConfig},
         user::{UserId, ROLLUP_CONTRACT_ID},
         utxo::{UTXOTree, UTXOTreeConfig, UTXO},
+        TX_IO_SIZE,
     },
     errors::TransactionError,
-    primitives::{crh::TransactionCRH, sparsemt::MerkleSparseTreePath},
+    primitives::{
+        crh::TransactionCRH,
+        sparsemt::{MerkleSparseTreePath, MerkleSparseTreeTwoPaths},
+    },
 };
+
+use crate::circuit::AggregatorCircuitInputs;
 
 pub mod circuit;
 pub mod errors;
@@ -34,14 +48,16 @@ pub struct AggregatorState<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>>
     pub transactions: Vec<Transaction<C>>,
     pub transaction_tree: TransactionTree<TransactionTreeConfig<C>>,
     pub nonces: HashMap<C, Nonce>,
-    pub nonce_tree: NonceTree<NonceTreeConfig<F>>,
-    pub deposits: Vec<UTXO<C>>,
-    pub withdrawals: Vec<UTXO<C>>,
+    pub deposits: Vec<(PublicKey<C>, u64)>,
+    pub withdrawals: Vec<(PublicKey<C>, u64)>,
     pub signer_tree: SignerTree<SignerTreeConfig<C>>,
-    pub signers: Vec<Option<UserId>>,
-    pub block_number: F,
+    pub signers: Vec<Option<PublicKey<C>>>,
+    pub height: usize,
     pub acc_signer: F,
     pub acc_pk: F,
+
+    pub tx_tree_update_proofs: Vec<MerkleSparseTreeTwoPaths<TransactionTreeConfig<C>>>,
+    pub ivc_inputs: Vec<AggregatorCircuitInputs<C>>,
 }
 
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C> {
@@ -53,15 +69,16 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
             transactions: vec![],
             transaction_tree: TransactionTree::blank(&config, &config),
             nonces: HashMap::new(),
-            nonce_tree: NonceTree::blank(&config, &config),
             signer_tree: SignerTree::blank(&config, &config),
             config,
-            block_number: F::zero(),
+            height: 0,
             deposits: vec![],
             withdrawals: vec![],
             signers: vec![],
             acc_signer: F::zero(),
             acc_pk: F::zero(),
+            tx_tree_update_proofs: vec![],
+            ivc_inputs: vec![],
         }
     }
 
@@ -73,6 +90,8 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
         self.signers.clear();
         self.acc_signer = F::zero();
         self.acc_pk = F::zero();
+        self.tx_tree_update_proofs.clear();
+        self.ivc_inputs.clear();
     }
 
     pub fn process_transactions(
@@ -82,20 +101,14 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
         for (sender, tx) in inputs {
             let nonce = self.nonces.entry(sender.key).or_insert(Nonce(0));
             tx.is_valid(Some(sender), Some(*nonce))?;
+            self.tx_tree_update_proofs.push(
+                self.transaction_tree
+                    .update_and_prove(self.transactions.len() as u64, &tx)
+                    .map_err(|_| TransactionError::TransactionTreeFailure)?,
+            );
             self.transactions.push(tx);
             nonce.0 += 1;
         }
-        self.transaction_tree = TransactionTree::new(
-            &self.config,
-            &self.config,
-            &BTreeMap::from_iter(
-                self.transactions
-                    .iter()
-                    .enumerate()
-                    .map(|(i, tx)| (i as u64, tx.clone())),
-            ),
-        )
-        .map_err(|_| TransactionError::TransactionTreeFailure)?;
 
         Ok(())
     }
@@ -113,18 +126,40 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
     pub fn process_signatures(
         &mut self,
         rollup_contract_pk: PublicKey<C>,
-        inputs: Vec<(UserId, PublicKey<C>, Option<Signature<C::ScalarField>>)>,
+        inputs: Vec<(PublicKey<C>, Option<Signature<C::ScalarField>>)>,
     ) -> Result<(), AggregatorError> {
-        for (i, (sender, pk, sig)) in inputs.into_iter().enumerate() {
+        for (i, (pk, sig)) in inputs.into_iter().enumerate() {
             let tx = &self.transactions[i];
 
+            let signer_tree_update_proof;
+            let mut utxo_tree_addition_positions = [C::BaseField::zero(); TX_IO_SIZE];
+            let mut utxo_tree_deletion_positions = [C::BaseField::zero(); TX_IO_SIZE];
+            let mut utxo_tree_addition_proofs: [MerkleSparseTreeTwoPaths<_>; TX_IO_SIZE] =
+                from_fn(|_| MerkleSparseTreeTwoPaths::default());
+            let mut utxo_tree_deletion_proofs: [MerkleSparseTreeTwoPaths<_>; TX_IO_SIZE] =
+                from_fn(|_| MerkleSparseTreeTwoPaths::default());
+            let sig = sig.unwrap_or_default();
+
             if pk
-                .verify_signature(&self.config, &Into::<Vec<_>>::into(tx), &sig.unwrap_or_default())
+                .verify_signature(
+                    &self.config,
+                    &[Into::<Vec<_>>::into(tx), vec![self.transaction_tree.root()]].concat(),
+                    &sig,
+                )
                 .map_err(|_| AggregatorError::SignatureError)?
-                || sender == ROLLUP_CONTRACT_ID
+                || pk == rollup_contract_pk
             {
-                self.signers.push(Some(sender));
-                for &utxo in tx.inputs.iter().filter(|utxo| !utxo.is_dummy) {
+                signer_tree_update_proof = self
+                    .signer_tree
+                    .update_and_prove(self.signers.len() as u64, &pk)
+                    .map_err(|_| AggregatorError::UTXOTreeUpdateError)?;
+                self.signers.push(Some(pk));
+                for (j, &utxo) in tx
+                    .inputs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, utxo)| !utxo.is_dummy)
+                {
                     if utxo.pk != rollup_contract_pk {
                         // if the sending pk does not belong to the contract, check that the utxo
                         // exists
@@ -139,15 +174,23 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
                             .pop()
                             .ok_or(AggregatorError::UTXOError)?;
 
-                        self.utxo_tree
+                        utxo_tree_deletion_positions[j] = C::BaseField::from(index as u64);
+                        utxo_tree_deletion_proofs[j] = self
+                            .utxo_tree
                             .update_and_prove(index as u64, &UTXO::dummy())
                             .map_err(|_| AggregatorError::UTXOTreeUpdateError)?;
                     }
                 }
-                for &utxo in tx.outputs.iter().filter(|utxo| !utxo.is_dummy) {
-                    if sender == ROLLUP_CONTRACT_ID {
+                let mut withdrawal_amount = 0;
+                for (j, &utxo) in tx
+                    .outputs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, utxo)| !utxo.is_dummy)
+                {
+                    if pk == rollup_contract_pk {
                         // when the sender is the rollup, then the output UTXO is a deposit
-                        self.deposits.push(utxo);
+                        self.deposits.push((utxo.pk, utxo.amount));
                     }
                     if utxo.pk != rollup_contract_pk {
                         // this output utxo is for a regular user
@@ -156,42 +199,70 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
                             .entry(utxo)
                             .or_default()
                             .push(self.current_utxo_index);
-                        self.utxo_tree
+
+                        utxo_tree_addition_positions[j] =
+                            C::BaseField::from(self.current_utxo_index as u64);
+                        utxo_tree_addition_proofs[j] = self
+                            .utxo_tree
                             .update_and_prove(self.current_utxo_index as u64, &utxo)
                             .map_err(|_| AggregatorError::UTXOTreeUpdateError)?;
                         self.current_utxo_index += 1;
                     } else {
-                        // the output utxo pk is the rollup, this is a withdrawal
-                        self.withdrawals.push(UTXO {
-                            amount: utxo.amount,
-                            pk: utxo.pk,
-                            is_dummy: false,
-                        });
+                        withdrawal_amount += utxo.amount;
                     }
                 }
+                if withdrawal_amount > 0 {
+                    self.withdrawals.push((pk, withdrawal_amount));
+                }
             } else {
+                signer_tree_update_proof = MerkleSparseTreeTwoPaths::default();
                 // the signature has not been verified or is not existent. we push \bot to the list
                 // of signers
                 self.signers.push(None);
             }
+
+            self.ivc_inputs.push(AggregatorCircuitInputs {
+                tx: tx.clone(),
+                tx_tree_update_proof: self.tx_tree_update_proofs[i].clone(),
+                utxo_tree_addition_positions,
+                utxo_tree_deletion_positions,
+                utxo_tree_addition_proofs,
+                utxo_tree_deletion_proofs,
+                signer_tree_update_proof,
+                sender_pk: pk,
+                signature: sig,
+            })
         }
 
         Ok(())
     }
 
-    pub fn produce_block(&self) -> Block<F> {
+    pub fn produce_block(&self, onchain_state: &MockContract<C>) -> Block<F> {
         Block {
             utxo_tree_root: self.utxo_tree.root(),
             tx_tree_root: self.transaction_tree.root(),
             signer_tree_root: self.signer_tree.root(),
-            signers: self.signers.clone(),
-            number: self.block_number.clone(), // deposits: self.deposits.clone(),
-                                               // withdrawals: self.withdrawals.clone(),
+            signers: self
+                .signers
+                .iter()
+                .map(|s| s.as_ref().map(|pk| onchain_state.pk_indices[pk] as u32))
+                .collect(),
+            height: self.height,
+            deposits: self
+                .deposits
+                .iter()
+                .map(|(pk, amount)| (onchain_state.pk_indices[pk] as u32, *amount))
+                .collect(),
+            withdrawals: self
+                .withdrawals
+                .iter()
+                .map(|(pk, amount)| (onchain_state.pk_indices[pk] as u32, *amount))
+                .collect(),
         }
     }
 
-    pub fn to_ivc_inputs(&self) {
-        todo!()
+    pub fn ivc_inputs(&self) -> Vec<AggregatorCircuitInputs<C>> {
+        self.ivc_inputs.clone()
     }
 }
 
@@ -201,6 +272,7 @@ mod tests {
     use ark_bn254::{Fq, Fr, G1Projective};
     use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
+    use mock_contract::L1Account;
     use plasma_fold::datastructures::{
         keypair::{KeyPair, SecretKey},
         user::User,
@@ -209,14 +281,16 @@ mod tests {
     /// NOTE: vector of users should have the same order as the vector of transactions. i.e.
     /// users[i] has done transactions[i]. it also supposes that they have the same length.
     /// TODO: make this test a bit less mouthful?
-    fn test_aggregator_native(
+    pub fn advance_epoch<C: CurveGroup<BaseField: PrimeField + Absorb>>(
         rng: &mut impl Rng,
-        config: &PoseidonConfig<Fq>,
-        aggregator: &mut AggregatorState<Fq, G1Projective>,
-        users: &Vec<User<G1Projective>>,
-        rollup_pk: &PublicKey<G1Projective>,
-        transactions: &Vec<Transaction<G1Projective>>,
-    ) {
+        config: &PoseidonConfig<C::BaseField>,
+        aggregator: &mut AggregatorState<C::BaseField, C>,
+        users: &Vec<User<C>>,
+        onchain_state: &MockContract<C>,
+        transactions: &Vec<Transaction<C>>,
+    ) -> Block<C::BaseField> {
+        let rollup_pk = onchain_state.pks[0];
+
         aggregator
             .process_transactions(
                 transactions
@@ -246,96 +320,90 @@ mod tests {
 
                 assert!(tx_in_tx_tree.is_ok());
 
-                let sender = users[i].id;
                 let sk = &users[i].keypair.sk;
                 let pk = users[i].keypair.pk;
-                let sig = if sender == ROLLUP_CONTRACT_ID {
+                let sig = if pk == rollup_pk {
                     None
                 } else {
                     // user signs the transaction
                     Some(
-                        sk.sign::<G1Projective>(
+                        sk.sign::<C>(
                             &config,
-                            &Into::<Vec<_>>::into(&transactions[i]),
+                            &[
+                                Into::<Vec<_>>::into(&transactions[i]),
+                                vec![aggregator.transaction_tree.root()],
+                            ]
+                            .concat(),
                             rng,
                         )
                         .unwrap(),
                     )
                 };
-                (sender, pk, sig)
+                (pk, sig)
             })
             .collect();
 
-        aggregator
-            .process_signatures(rollup_pk.clone(), inputs)
-            .unwrap();
+        aggregator.process_signatures(rollup_pk, inputs).unwrap();
 
-        let _ = aggregator.produce_block();
-
-        aggregator.reset_for_new_epoch();
+        aggregator.produce_block(onchain_state)
     }
 
-    fn setup(
+    pub fn aggregator_setup<C: CurveGroup<BaseField: PrimeField + Absorb>>(
         rng: &mut impl Rng,
         n_users: usize,
     ) -> (
-        PoseidonConfig<Fq>,
-        AggregatorState<Fq, G1Projective>,
-        Vec<User<G1Projective>>,
+        PoseidonConfig<C::BaseField>,
+        MockContract<C>,
+        AggregatorState<C::BaseField, C>,
+        Vec<User<C>>,
     ) {
-        let rollup_sk = SecretKey::<Fr>::new(rng);
-        let rollup_pk = PublicKey::<G1Projective>::new(&rollup_sk);
-        let rollup_keypair = KeyPair {
-            sk: rollup_sk,
-            pk: rollup_pk,
-        };
-
-        let aggregator_as_user = User {
-            keypair: rollup_keypair,
-            balance: 0,
-            nonce: Nonce(0),
-            acc: Fr::default(),
-            id: 0,
-        };
-
-        let sks = (1..n_users)
-            .map(|_| SecretKey::<Fr>::new(rng))
+        let sks = (0..n_users)
+            .map(|_| SecretKey::<C::ScalarField>::new(rng))
             .collect::<Vec<_>>();
 
         let keypairs = sks
             .into_iter()
             .map(|sk| KeyPair {
-                pk: PublicKey::<G1Projective>::new(&sk),
+                pk: PublicKey::<C>::new(&sk),
                 sk,
             })
             .collect::<Vec<_>>();
 
-        let mut users = keypairs
+        let mut contract_state = MockContract::<C>::new(keypairs[0].pk);
+
+        let mut l1_users = vec![L1Account::new(0); n_users];
+
+        let mut l2_users = keypairs
             .into_iter()
             .enumerate()
             .map(|(i, kp)| User {
                 keypair: kp,
                 balance: 0,
                 nonce: Nonce(0),
-                acc: Fr::default(),
+                acc: C::ScalarField::default(),
                 id: (i as u32) + 1, // 0 is reserved for aggregator
             })
-            .collect::<Vec<User<G1Projective>>>();
+            .collect::<Vec<User<C>>>();
 
-        users.insert(0, aggregator_as_user);
+        l2_users[0].balance = u64::MAX; // Contract starts with max L2 balance
+        l1_users[1].balance = 100; // User 1 starts with 100 L1 balance
 
-        let config = poseidon_canonical_config::<Fq>();
+        for i in 1..n_users {
+            contract_state.join(l1_users[i], l2_users[i].keypair.pk);
+        }
+
+        let config = poseidon_canonical_config::<C::BaseField>();
         let aggregator = AggregatorState::new(config.clone());
 
-        (config, aggregator, users)
+        (config, contract_state, aggregator, l2_users)
     }
 
     #[test]
     fn test_aggregator_native_valid() {
         let mut rng = &mut thread_rng();
-        let n_users = 5; // includes aggregator
-        let (config, mut aggregator, users) = setup(rng, n_users);
-        let rollup_pk = users[0].keypair.pk;
+        let n_users = 5;
+        let (config, mut contract_state, mut aggregator, users) =
+            aggregator_setup::<G1Projective>(rng, n_users);
 
         let transactions = vec![
             Transaction {
@@ -420,18 +488,17 @@ mod tests {
             },
         ];
 
-        test_aggregator_native(
+        advance_epoch(
             &mut rng,
             &config,
             &mut aggregator,
             &users,
-            &rollup_pk,
+            &mut contract_state,
             &transactions,
         );
 
-        aggregator.reset_for_new_epoch();
-
         // reset aggregator and make another batch of transactions
+        aggregator.reset_for_new_epoch();
         let transactions = vec![
             Transaction {
                 // Contract (80) + Contract (20) -> User 1 (100)
@@ -515,12 +582,12 @@ mod tests {
             },
         ];
 
-        test_aggregator_native(
+        advance_epoch(
             &mut rng,
             &config,
             &mut aggregator,
             &users,
-            &rollup_pk,
+            &mut contract_state,
             &transactions,
         );
     }
@@ -531,8 +598,8 @@ mod tests {
         // testing whether providing an invalid nonce makes the aggregator fail
         let mut rng = &mut thread_rng();
         let n_users = 4; // includes aggregator
-        let (config, mut aggregator, users) = setup(rng, n_users);
-        let rollup_pk = users[0].keypair.pk;
+        let (config, mut contract_state, mut aggregator, users) =
+            aggregator_setup::<G1Projective>(rng, n_users);
 
         let transactions = vec![
             Transaction {
@@ -586,12 +653,12 @@ mod tests {
             },
         ];
 
-        test_aggregator_native(
+        advance_epoch(
             &mut rng,
             &config,
             &mut aggregator,
             &users,
-            &rollup_pk,
+            &mut contract_state,
             &transactions,
         );
     }
@@ -602,8 +669,8 @@ mod tests {
         // testing whether providing an invalid utxo makes the aggregator fail
         let mut rng = &mut thread_rng();
         let n_users = 4; // includes aggregator
-        let (config, mut aggregator, users) = setup(rng, n_users);
-        let rollup_pk = users[0].keypair.pk;
+        let (config, mut contract_state, mut aggregator, users) =
+            aggregator_setup::<G1Projective>(rng, n_users);
 
         let transactions = vec![
             Transaction {
@@ -657,12 +724,12 @@ mod tests {
             },
         ];
 
-        test_aggregator_native(
+        advance_epoch(
             &mut rng,
             &config,
             &mut aggregator,
             &users,
-            &rollup_pk,
+            &mut contract_state,
             &transactions,
         );
     }
@@ -673,8 +740,8 @@ mod tests {
         // testing whether providing an invalid utxo makes the aggregator fail
         let mut rng = &mut thread_rng();
         let n_users = 4;
-        let (config, mut aggregator, users) = setup(rng, n_users);
-        let rollup_pk = users[0].keypair.pk;
+        let (config, mut contract_state, mut aggregator, users) =
+            aggregator_setup::<G1Projective>(rng, n_users);
 
         let transactions = vec![
             Transaction {
@@ -728,12 +795,12 @@ mod tests {
             },
         ];
 
-        test_aggregator_native(
+        advance_epoch(
             &mut rng,
             &config,
             &mut aggregator,
             &users,
-            &rollup_pk,
+            &mut contract_state,
             &transactions,
         );
     }

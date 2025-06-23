@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "aggregator","plasma-fold", "client"]
+members = [ "aggregator","plasma-fold", "client", "mock-contract" ]
 
 [workspace.dependencies]
 folding-schemes = { git = "https://github.com/privacy-scaling-explorations/sonobe", rev = "fc91430" }

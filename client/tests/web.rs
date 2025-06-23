@@ -207,7 +207,9 @@ pub fn test_send_and_receive_transaction() {
         tx_tree_root: transaction_tree.root(),
         signer_tree_root: signer_tree.root(),
         signers: signers_ids,
-        number: Fr::ONE,
+        height: 1,
+        deposits: vec![],
+        withdrawals: vec![],
     };
 
     let sender_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
@@ -321,7 +323,9 @@ pub fn test_lower_block_number() {
         tx_tree_root: transaction_tree.root(),
         signer_tree_root: signer_tree.root(),
         signers: signers_ids,
-        number: Fr::ONE, // NOTE: processed block number
+        height: 1, // NOTE: processed block number
+        deposits: vec![],
+        withdrawals: vec![],
     };
 
     let sender_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
@@ -388,7 +392,9 @@ pub fn test_lower_transaction_index() {
         tx_tree_root: transaction_tree.root(),
         signer_tree_root: signer_tree.root(),
         signers: signers_ids,
-        number: Fr::ONE,
+        height: 1,
+        deposits: vec![],
+        withdrawals: vec![],
     };
 
     let sender_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
@@ -454,7 +460,9 @@ pub fn test_stricly_lower_transaction_index() {
         tx_tree_root: transaction_tree.root(),
         signer_tree_root: signer_tree.root(),
         signers: signers_ids,
-        number: Fr::ONE,
+        height: 1,
+        deposits: vec![],
+        withdrawals: vec![],
     };
 
     let receiver_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
@@ -556,7 +564,9 @@ pub fn test_run_fold_steps() {
             tx_tree_root: transaction_tree.root(),
             signer_tree_root: signer_tree.root(),
             signers: signers_ids,
-            number: Fr::from(i),
+            height: i as usize,
+            deposits: vec![],
+            withdrawals: vec![],
         };
 
         let user_aux = UserAux {
@@ -657,7 +667,9 @@ pub fn test_memory_usage() {
         tx_tree_root: transaction_tree.root(),
         signer_tree_root: signer_tree.root(),
         signers: signers_ids,
-        number: Fr::from(i),
+        height: i as usize,
+        deposits: vec![],
+        withdrawals: vec![],
     };
 
     let user_aux = UserAux {

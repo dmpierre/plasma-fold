@@ -12,15 +12,17 @@ use ark_r1cs_std::{
     eq::EqGadget,
     fields::{fp::FpVar, FieldVar},
     groups::CurveVar,
-    prelude::Boolean,
+    prelude::Boolean, uint64::UInt64,
 };
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
 
 use crate::{
     datastructures::{
-        keypair::constraints::PublicKeyVar, noncemap::constraints::NonceVar,
-        utxo::constraints::UTXOVar, TX_IO_SIZE,
+        keypair::{constraints::PublicKeyVar, PublicKey},
+        noncemap::constraints::NonceVar,
+        utxo::constraints::UTXOVar,
+        TX_IO_SIZE,
     },
     primitives::{crh::constraints::TransactionVarCRH, sparsemt::constraints::SparseConfigGadget},
     TX_TREE_HEIGHT,
@@ -42,7 +44,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
                 arr.push(p);
             }
         }
-        arr.push(self.nonce.clone());
+        arr.push(self.nonce.to_fp()?);
         Ok(arr)
     }
 }
@@ -55,7 +57,7 @@ pub struct TransactionVar<
 > {
     pub inputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
     pub outputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
-    pub nonce: FpVar<F>,
+    pub nonce: UInt64<F>,
 }
 
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
@@ -80,7 +82,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
             outputs: Vec::new_variable(cs.clone(), || Ok(&outputs[..]), mode)?
                 .try_into()
                 .unwrap(),
-            nonce: FpVar::new_variable(cs, || Ok(F::from(nonce.0)), mode)?,
+            nonce: UInt64::new_variable(cs, || Ok(nonce.0), mode)?,
         })
     }
 }
@@ -112,51 +114,35 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
     TransactionVar<F, C, CVar>
 {
-    pub fn is_valid(
-        &self,
-        sender: Option<PublicKeyVar<C, CVar>>,
-        nonce: Option<NonceVar<F>>,
-    ) -> Result<Boolean<F>, SynthesisError> {
-        let mut result = Boolean::TRUE;
-        let sender = sender.unwrap_or(self.inputs[0].pk.clone());
-        for i in &self.inputs {
-            result &= i.pk.key.is_eq(&sender.key)?;
-        }
-        result &= self
-            .inputs
-            .iter()
-            .zip(&self.outputs)
-            .map(|(i, o)| &i.amount - &o.amount)
-            .sum::<FpVar<F>>()
-            .is_zero()?;
-        if let Some(nonce) = nonce {
-            result &= self.nonce.is_eq(&nonce)?;
-        }
-        Ok(result)
-    }
-
     pub fn enforce_valid(
         &self,
-        sender: Option<PublicKeyVar<C, CVar>>,
+        sender: &PublicKeyVar<C, CVar>,
         nonce: Option<NonceVar<F>>,
     ) -> Result<(), SynthesisError> {
-        let sender = sender.unwrap_or(self.inputs[0].pk.clone());
         for i in &self.inputs {
-            i.pk.key.enforce_equal(&sender.key)?;
+            i.pk.key
+                .conditional_enforce_equal(&sender.key, &!&i.is_dummy)?;
         }
-        self.inputs
-            .iter()
-            .zip(&self.outputs)
-            .map(|(i, o)| &i.amount - &o.amount)
-            .sum::<FpVar<F>>()
-            .enforce_equal(&FpVar::zero())?;
+        let mut sum = FpVar::zero();
+        for i in &self.inputs {
+            sum += i.is_dummy.select(&FpVar::zero(), &i.amount)?;
+        }
+        for o in &self.outputs {
+            sum -= o.is_dummy.select(&FpVar::zero(), &o.amount)?;
+        }
+        sum.enforce_equal(&FpVar::zero())?;
         if let Some(nonce) = nonce {
             self.nonce.enforce_equal(&nonce)?;
         }
         Ok(())
     }
 
-    pub fn get_signer(&self) -> PublicKeyVar<C, CVar> {
-        self.inputs[0].pk.clone()
+    pub fn get_signer(&self) -> Result<PublicKeyVar<C, CVar>, SynthesisError> {
+        let mut pk = PublicKeyVar::new_constant(ConstraintSystemRef::None, PublicKey::default())?;
+        // Skip dummy UTXOs and return the public key of the last non-dummy UTXO.
+        for i in &self.inputs {
+            pk = i.is_dummy.select(&pk, &i.pk)?;
+        }
+        Ok(pk)
     }
 }

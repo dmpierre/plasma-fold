@@ -53,7 +53,7 @@ pub mod tests {
     };
     use ark_ff::UniformRand;
     use ark_grumpkin::Projective;
-    use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
+    use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, uint64::UInt64};
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
@@ -104,7 +104,7 @@ pub mod tests {
                 )
                 .unwrap();
             let expected_user_nonce_var =
-                FpVar::new_witness(cs.clone(), || Ok(Fr::from(nonces[expected_random_user_id as usize].0)))
+                UInt64::new_witness(cs.clone(), || Ok(nonces[expected_random_user_id as usize].0))
                     .unwrap();
             let user_nonce_proof_var =
                 MerkleSparseTreePathVar::<_, _, NonceTreeConfigGadget<_>>::new_witness(

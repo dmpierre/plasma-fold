@@ -64,6 +64,7 @@ pub struct MerkleSparseTreePath<P: SparseConfig> {
 }
 
 /// A modifying proof, consisting of two Merkle tree paths
+#[derive(Debug, Clone)]
 pub struct MerkleSparseTreeTwoPaths<P: SparseConfig> {
     pub path: Vec<P::InnerDigest>,
 }
@@ -438,63 +439,43 @@ impl<
         index: u64,
         new_leaf: &P::Leaf,
     ) -> Result<MerkleSparseTreeTwoPaths<P>, Error> {
-        let mut path = vec![];
+        let siblings = self.siblings(index)?;
 
-        let new_leaf_hash = P::LeafHash::evaluate(&self.leaf_hash_params, new_leaf)?;
+        let mut hash = P::LeafHash::evaluate(&self.leaf_hash_params, new_leaf)?;
+        let mut index = convert_index_to_last_level(index, P::HEIGHT);
+
+        for sibling in &siblings {
+            self.tree.insert(index, hash);
+            hash = if is_left_child(index) {
+                P::TwoToOneHash::evaluate(&self.two_to_one_hash_params, &hash, sibling)?
+            } else {
+                P::TwoToOneHash::evaluate(&self.two_to_one_hash_params, sibling, &hash)?
+            };
+            index = parent(index).unwrap();
+        }
+        self.tree.insert(0, hash);
+        self.root = Some(hash);
+
+        Ok(MerkleSparseTreeTwoPaths { path: siblings })
+    }
+
+    pub fn siblings(&mut self, index: u64) -> Result<Vec<F>, Error> {
+        let mut siblings = vec![];
 
         let tree_height = P::HEIGHT;
-        let tree_index = convert_index_to_last_level(index, tree_height);
+        let mut index = convert_index_to_last_level(index, tree_height);
 
-        // Update the leaf and update the parents
-        self.tree.insert(tree_index, new_leaf_hash);
-
-        // Iterate from the leaf up to the root, storing all intermediate hash values.
-        let mut current_node = tree_index;
-        let mut is_left = is_left_child(current_node);
-        current_node = parent(current_node).unwrap();
-
-        let mut empty_hashes_iter = self.empty_hashes.iter();
-        loop {
-            let left_node = left_child(current_node);
-            let right_node = right_child(current_node);
-
-            let mut left_hash = empty_hashes_iter.next().unwrap().clone();
-            let mut right_hash = left_hash.clone();
-
-            if self.tree.contains_key(&left_node) {
-                match self.tree.get(&left_node) {
-                    Some(x) => left_hash = x.clone(),
-                    _ => return Err(Error::GenericError(Box::new(SparseMTError::GenericError))), // TODO: change this
-                }
-            }
-
-            if self.tree.contains_key(&right_node) {
-                match self.tree.get(&right_node) {
-                    Some(x) => right_hash = x.clone(),
-                    _ => return Err(Error::GenericError(Box::new(SparseMTError::GenericError))), // TODO: change this
-                }
-            }
-            path.push(if is_left { right_hash } else { left_hash });
-
-            self.tree.insert(
-                current_node,
-                P::TwoToOneHash::evaluate(&self.two_to_one_hash_params, &left_hash, &right_hash)?,
+        for i in 0..tree_height - 1 {
+            siblings.push(
+                *self
+                    .tree
+                    .get(&sibling(index).unwrap())
+                    .unwrap_or(&self.empty_hashes[i as usize]),
             );
-
-            if is_root(current_node) {
-                break;
-            }
-
-            is_left = is_left_child(current_node);
-            current_node = parent(current_node).unwrap();
+            index = parent(index).unwrap();
         }
 
-        match self.tree.get(&0) {
-            Some(x) => self.root = Some((*x).clone()),
-            None => return Err(Error::GenericError(Box::new(SparseMTError::GenericError))), // TODO: change this
-        }
-
-        Ok(MerkleSparseTreeTwoPaths { path })
+        Ok(siblings)
     }
 
     /// check if the tree is structurally valid

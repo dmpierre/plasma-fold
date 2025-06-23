@@ -54,7 +54,7 @@ pub mod tests {
 
     #[test]
     pub fn test_print_serialized_params() {
-        pub const TEST_BATCH_SIZE: usize = 10;
+        pub const TEST_BATCH_SIZE: usize = 5;
         let pp = poseidon_canonical_config();
         let mut rng = thread_rng();
 
@@ -84,16 +84,16 @@ pub mod tests {
             + vp.cf_r1cs.serialized_size(Compress::Yes);
 
         println!(
-            "Batch size: {}, total circuit size: {}, params size: {}",
+            "Batch size: {}, total circuit size: {}, params size: {} {} {} {}",
             TEST_BATCH_SIZE,
             vp.r1cs.n_constraints(),
-            pp_size + vp_size
+            pp_size, vp.serialized_size(Compress::Yes), vp.r1cs.serialized_size(Compress::Yes), vp.cf_r1cs.serialized_size(Compress::Yes)
         );
     }
 
     #[test]
     pub fn test_print_serialized_params_sha() {
-        pub const TEST_BATCH_SIZE: usize = 2;
+        pub const TEST_BATCH_SIZE: usize = 1;
         let pp = poseidon_canonical_config();
         let mut rng = thread_rng();
 
@@ -122,10 +122,10 @@ pub mod tests {
             + vp.cf_r1cs.serialized_size(Compress::Yes);
 
         println!(
-            "[SHA] Batch size: {}, total circuit size: {}, params size: {}",
+            "Batch size: {}, total circuit size: {}, params size: {} {} {} {}",
             TEST_BATCH_SIZE,
             vp.r1cs.n_constraints(),
-            pp_size + vp_size
+            pp_size, vp.serialized_size(Compress::Yes), vp.r1cs.serialized_size(Compress::Yes), vp.cf_r1cs.serialized_size(Compress::Yes)
         );
     }
 }

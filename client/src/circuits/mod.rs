@@ -237,7 +237,7 @@ impl<
         acc_t_plus_1 = A::update(&self.acc_pp, &acc_t_plus_1, &block_hash)?;
 
         // ensure the current processed block number is equal or greater than the previous block
-        let _ = &prev_block_number.enforce_cmp(&aux.block.number, Ordering::Less, true)?;
+        let _ = &prev_block_number.enforce_cmp(&aux.block.height, Ordering::Less, true)?;
 
         // if prev_block_hash != currently_processed_block -> currently processed tx index should
         // be reset to 0
@@ -279,7 +279,7 @@ impl<
                 &is_regular_transaction,
             )?;
 
-            let transaction_signer = transaction.get_signer();
+            let transaction_signer = transaction.get_signer()?;
 
             // check that tx signer is in the signer tree
             // if the tx is a dummy transaction, this check is not enforced
@@ -322,7 +322,7 @@ impl<
         // set the new processed transaction index to the currently processed transaction
         // and set new block hash to the currently processed block
         prev_block_hash = block_hash;
-        prev_block_number = aux.block.number;
+        prev_block_number = aux.block.height;
 
         Ok([
             balance_t_plus_1,

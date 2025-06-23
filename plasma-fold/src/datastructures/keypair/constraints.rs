@@ -3,6 +3,7 @@ use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::alloc::AllocationMode;
+use ark_r1cs_std::select::CondSelectGadget;
 use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar, prelude::Boolean};
 use ark_relations::r1cs::Namespace;
 use ark_relations::r1cs::SynthesisError;
@@ -36,6 +37,22 @@ impl<C: CurveGroup<BaseField: Absorb + PrimeField>, CVar: CurveVar<C, C::BaseFie
         let pk_var = CVar::new_variable(cs.clone(), || Ok(pk.key), mode)?;
         Ok(PublicKeyVar {
             key: pk_var,
+            _f: PhantomData::<C>,
+        })
+    }
+}
+
+impl<C: CurveGroup<BaseField: Absorb + PrimeField>, CVar: CurveVar<C, C::BaseField>>
+    CondSelectGadget<C::BaseField> for PublicKeyVar<C, CVar>
+{
+    fn conditionally_select(
+        cond: &Boolean<C::BaseField>,
+        true_value: &Self,
+        false_value: &Self,
+    ) -> Result<Self, SynthesisError> {
+        let key = cond.select(&true_value.key, &false_value.key)?;
+        Ok(PublicKeyVar {
+            key,
             _f: PhantomData::<C>,
         })
     }

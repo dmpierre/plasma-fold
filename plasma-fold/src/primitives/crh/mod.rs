@@ -168,7 +168,7 @@ impl<F: PrimeField + Absorb> CRHScheme for BlockCRH<F> {
             block.utxo_tree_root,
             block.tx_tree_root,
             block.signer_tree_root,
-            block.number,
+            F::from(block.height as u64),
         ];
         Ok(CRH::evaluate(parameters, input)?)
     }

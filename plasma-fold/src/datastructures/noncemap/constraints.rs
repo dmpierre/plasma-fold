@@ -6,13 +6,13 @@ use ark_crypto_primitives::{
     sponge::Absorb,
 };
 use ark_ff::PrimeField;
-use ark_r1cs_std::fields::fp::FpVar;
+use ark_r1cs_std::{fields::fp::FpVar, uint64::UInt64};
 
 use crate::primitives::{crh::constraints::NonceVarCRH, sparsemt::constraints::SparseConfigGadget};
 
 use super::NonceTreeConfig;
 
-pub type NonceVar<F> = FpVar<F>;
+pub type NonceVar<F> = UInt64<F>;
 pub struct NonceTreeConfigGadget<F: PrimeField> {
     _f: PhantomData<F>,
 }
