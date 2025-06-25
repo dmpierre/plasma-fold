@@ -473,7 +473,7 @@ mod tests {
     };
     use plasma_fold::datastructures::{keypair::SecretKey, noncemap::Nonce};
 
-    const B: usize = 8;
+    const B: usize = 4;
 
     #[test]
     fn test_num_constraints_transfer_only_mode() {
