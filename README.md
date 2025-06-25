@@ -1,5 +1,11 @@
 # PlasmaFold 
 
+
+
+<p align="center">
+  <img width="180" alt="plasma-fold" src="https://github.com/user-attachments/assets/c19cbc72-e426-4ac7-b421-331bd76146d6" width="30%" height="30%" />
+</p>
+
 PlasmaFold, a payment L2 reaching 14k+ TPS.
 
 PlasmaFold operates under a "verifiable plasma" regime. On one hand, it uses plasma-like data availability requirements, restricting the amount of data posted by an aggregator to minimal amounts. On the other, it requires the plasma aggregator to verifiably build blocks and users to run a (lightweight) client-side prover.
