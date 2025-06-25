@@ -10,4 +10,10 @@ Our prototype implementation demonstrates a PlasmaFold aggregator running on low
 
 ## Tests
 
-PlasmaFo
+We provide tests for plasmafold. While tests for PlasmaFold's datastructures are native, client's tests run in wasm, within the browser. The latter assume a working installation of [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/).
+
+```
+$ cargo test -r -p plasma-fold # datastructures tests
+$ cargo test -r -p aggregator # aggregator tests
+$ cd client && wasm-pack test -r --chrome --headless # client tests
+```
