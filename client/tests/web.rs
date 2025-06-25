@@ -755,7 +755,9 @@ pub fn test_sha_constraints() {
         tx_tree_root: transaction_tree.root(),
         signer_tree_root: signer_tree.root(),
         signers: signers_ids,
-        number: Fr::ONE,
+        height: 1, // NOTE: processed block numberAdd commentMore actions
+        deposits: vec![],
+        withdrawals: vec![],
     };
 
     let sender_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
@@ -848,7 +850,9 @@ pub fn test_run_fold_steps_sha() {
             tx_tree_root: transaction_tree.root(),
             signer_tree_root: signer_tree.root(),
             signers: signers_ids,
-            number: Fr::from(i),
+            height: 1, // NOTE: processed block numberAdd commentMore actions
+            deposits: vec![],
+            withdrawals: vec![],
         };
 
         let user_aux = UserAux {
@@ -944,7 +948,9 @@ pub fn test_memory_usage_sha() {
         tx_tree_root: transaction_tree.root(),
         signer_tree_root: signer_tree.root(),
         signers: signers_ids,
-        number: Fr::from(i),
+        height: 1, // NOTE: processed block numberAdd commentMore actions
+        deposits: vec![],
+        withdrawals: vec![],
     };
 
     let user_aux = UserAux {
