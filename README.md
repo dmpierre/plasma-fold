@@ -1,7 +1,5 @@
 # PlasmaFold 
 
-
-
 <p align="center">
   <img width="180" alt="plasma-fold" src="https://github.com/user-attachments/assets/c19cbc72-e426-4ac7-b421-331bd76146d6" width="30%" height="30%" />
 </p>
@@ -16,7 +14,7 @@ Our prototype implementation demonstrates a PlasmaFold aggregator running on low
 
 ## Tests
 
-We provide tests for plasmafold. While tests for PlasmaFold's datastructures are native, client's tests run in wasm, within the browser. The latter assume a working installation of [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/).
+Tests for PlasmaFold's datastructures and aggregator run natively. Client tests run in wasm within the browser and assume a working installation of [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/).
 
 ```
 $ cargo test -r -p plasma-fold # datastructures tests
