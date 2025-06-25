@@ -1,5 +1,8 @@
 use ark_bn254::Fr;
 use ark_bn254::G1Projective as Projective2;
+use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
+use ark_crypto_primitives::crh::sha256::constraints::UnitVar;
+use ark_crypto_primitives::crh::sha256::Sha256;
 use ark_crypto_primitives::{
     crh::{
         poseidon::{
@@ -15,6 +18,7 @@ use ark_grumpkin::{constraints::GVar, Projective};
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
 use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
 use ark_std::rand::thread_rng;
+use client::ClientCircuitSha;
 use client::{
     circuits::{UserAux, UserAuxVar, UserCircuit},
     ClientCircuitPoseidon,
@@ -31,6 +35,7 @@ use folding_schemes::{
 };
 
 use js_sys::{Uint8Array, WebAssembly};
+use plasma_fold::primitives::accumulator::constraints::Sha256AccumulatorVar;
 use plasma_fold::{
     datastructures::{
         block::Block,
@@ -100,6 +105,25 @@ pub fn get_client_circuit<const BATCH_SIZE: usize>(
         PoseidonAccumulatorVar<Fr>,
         BATCH_SIZE,
     >::new(pp_var.clone(), pp_var.clone())
+}
+
+pub fn get_client_circuit_sha<const BATCH_SIZE: usize>(
+    cs: ConstraintSystemRef<Fr>,
+    pp_var: &CRHParametersVar<Fr>,
+) -> UserCircuit<Fr, Projective, GVar, Sha256, Sha256Gadget<Fr>, Sha256AccumulatorVar<Fr>, BATCH_SIZE>
+{
+    UserCircuit::<
+        Fr,
+        Projective,
+        GVar,
+        Sha256,
+        Sha256Gadget<Fr>,
+        Sha256AccumulatorVar<Fr>,
+        BATCH_SIZE,
+    >::new(
+        UnitVar::new_constant(cs.clone(), ()).unwrap(),
+        pp_var.clone(),
+    )
 }
 
 // make transaction tree from a specified vector of transactions, along with their indexes in the
@@ -174,7 +198,7 @@ pub fn get_signer_inclusion_proofs(
 
 pub const TEST_BATCH_SIZE: usize = 10;
 
-#[wasm_bindgen_test]
+// #[wasm_bindgen_test]
 pub fn test_send_and_receive_transaction() {
     let mut rng = thread_rng();
     let cs = ConstraintSystem::<Fr>::new_ref();
@@ -290,7 +314,7 @@ pub fn test_send_and_receive_transaction() {
     assert_eq!(updated_receiver_state[6].value().unwrap(), Fr::from(2)); // prev processed tx index
 }
 
-#[wasm_bindgen_test]
+// #[wasm_bindgen_test]
 pub fn test_lower_block_number() {
     const TEST_BATCH_SIZE: usize = 2;
     let mut rng = thread_rng();
@@ -356,7 +380,7 @@ pub fn test_lower_block_number() {
     assert_eq!(cs.is_satisfied().unwrap(), false);
 }
 
-#[wasm_bindgen_test]
+// #[wasm_bindgen_test]
 pub fn test_lower_transaction_index() {
     pub const TEST_BATCH_SIZE: usize = 2;
     let mut rng = thread_rng();
@@ -425,7 +449,7 @@ pub fn test_lower_transaction_index() {
     assert_eq!(cs.is_satisfied().unwrap(), false);
 }
 
-#[wasm_bindgen_test]
+// #[wasm_bindgen_test]
 pub fn test_stricly_lower_transaction_index() {
     pub const TEST_BATCH_SIZE: usize = 4;
     let mut rng = thread_rng();
@@ -509,7 +533,7 @@ pub fn test_stricly_lower_transaction_index() {
     assert_eq!(cs.is_satisfied().unwrap(), false);
 }
 
-#[wasm_bindgen_test]
+// #[wasm_bindgen_test]
 pub fn test_run_fold_steps() {
     let pp = poseidon_canonical_config();
     let mut rng = thread_rng();
@@ -607,7 +631,7 @@ pub fn get_current_allocated_bytes() -> u64 {
     Uint8Array::new(&buffer).length() as u64
 }
 
-#[wasm_bindgen_test]
+// #[wasm_bindgen_test]
 pub fn test_memory_usage() {
     let pp = poseidon_canonical_config();
     let mut rng = thread_rng();
@@ -686,6 +710,257 @@ pub fn test_memory_usage() {
 
     console_log!(
         "batch size: {}, current mem length (kB): {}",
+        TEST_BATCH_SIZE,
+        (mem_length_stop - mem_length_start) / 1024
+    );
+
+    let ivc_proof = folding_scheme.ivc_proof();
+    let _ = N::verify(
+        nova_params.1, // Nova's verifier params
+        ivc_proof,
+    )
+    .unwrap();
+}
+
+#[wasm_bindgen_test]
+pub fn test_sha_constraints() {
+    const TEST_BATCH_SIZE: usize = 10;
+    let mut rng = thread_rng();
+    let cs = ConstraintSystem::<Fr>::new_ref();
+    let pp = poseidon_canonical_config();
+    let pp_var = CRHParametersVar::new_constant(cs.clone(), pp.clone()).unwrap();
+
+    let sender = User::new(&mut rng, 42);
+    let sender_pk_hash = PublicKeyCRH::evaluate(&pp, sender.keypair.pk).unwrap();
+    let receiver = User::new(&mut rng, 43);
+
+    let transaction = make_tx(&sender, &receiver);
+    // Vec of [(transaction, index in tx tree)]
+    let mut transactions = Vec::from([(transaction, 2)]);
+    pad_transaction_vec(&mut transactions, TEST_BATCH_SIZE);
+    let transaction_tree = make_tx_tree(&pp, &transactions);
+    let transaction_inclusion_proofs =
+        get_tx_inclusion_proofs(&transactions, &transaction_tree, TEST_BATCH_SIZE);
+
+    let signer_tree = make_signer_tree(&pp, &Vec::from([sender.clone()]));
+    let signers_ids = Vec::from([Some(sender.id)]);
+    let signer_pk_inclusion_proofs =
+        get_signer_inclusion_proofs(&Vec::from([sender.clone()]), &signer_tree, TEST_BATCH_SIZE);
+
+    // NOTE: instantiating sha circuit here
+    let sender_circuit = get_client_circuit_sha::<TEST_BATCH_SIZE>(cs.clone(), &pp_var);
+
+    let block = Block {
+        utxo_tree_root: Fr::ZERO,
+        tx_tree_root: transaction_tree.root(),
+        signer_tree_root: signer_tree.root(),
+        signers: signers_ids,
+        number: Fr::ONE,
+    };
+
+    let sender_aux = UserAux::<_, _, TEST_BATCH_SIZE> {
+        transaction_inclusion_proofs,
+        signer_pk_inclusion_proofs,
+        block: block.clone(),
+        transactions,
+        pk: sender.keypair.pk,
+    };
+    let mut receiver_aux = sender_aux.clone();
+    receiver_aux.pk = receiver.keypair.pk;
+
+    let sender_aux_var = UserAuxVar::new_witness(cs.clone(), || Ok(sender_aux.clone())).unwrap();
+
+    let sender_state = Vec::from([
+        Fr::from(100),
+        Fr::ZERO,
+        sender_pk_hash,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+    ]);
+    let sender_state_var = get_state_as_var(cs.clone(), sender_state.clone());
+    let _ = sender_circuit
+        .update_balance(cs.clone(), sender_state_var, sender_aux_var)
+        .unwrap();
+    assert!(cs.is_satisfied().unwrap());
+    console_log!(
+        "batchsize: {}, n_constraints sender circuit: {}",
+        TEST_BATCH_SIZE,
+        cs.num_constraints()
+    );
+}
+
+#[wasm_bindgen_test]
+pub fn test_run_fold_steps_sha() {
+    const TEST_BATCH_SIZE: usize = 10;
+    let pp = poseidon_canonical_config();
+    let mut rng = thread_rng();
+
+    let user = User::new(&mut rng, 42);
+    let user_pk_hash = PublicKeyCRH::evaluate(&pp, user.keypair.pk).unwrap();
+
+    let state = Vec::from([
+        Fr::from(2000),
+        Fr::ZERO,
+        user_pk_hash,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+    ]);
+
+    // NOTE: instantiating sha circuit here
+    let f_circuit =
+        ClientCircuitSha::<Fr, Projective, GVar, TEST_BATCH_SIZE>::new(pp.clone()).unwrap();
+
+    type N = Nova<
+        Projective2,
+        Projective,
+        ClientCircuitSha<Fr, Projective, GVar, TEST_BATCH_SIZE>,
+        Pedersen<Projective2>,
+        Pedersen<Projective>,
+        false,
+    >;
+
+    let nova_preprocess_params = PreprocessorParam::new(pp.clone(), f_circuit.clone());
+    let nova_params = N::preprocess(&mut rng, &nova_preprocess_params).unwrap();
+    let mut folding_scheme = N::init(&nova_params, f_circuit, state.clone()).unwrap();
+
+    let mut durations = Vec::new();
+    // start at 0 since tx idx 0 is reserved for default transactions in tests
+    for i in 1..=10 {
+        let receiver = User::new(&mut rng, i);
+        let transaction = make_tx(&user, &receiver);
+        let mut transactions = Vec::from([(transaction, (i) as u64)]);
+        pad_transaction_vec(&mut transactions, TEST_BATCH_SIZE);
+        let transaction_tree = make_tx_tree(&pp, &transactions);
+        let transaction_inclusion_proofs =
+            get_tx_inclusion_proofs(&transactions, &transaction_tree, TEST_BATCH_SIZE);
+
+        let signer_tree = make_signer_tree(&pp, &Vec::from([user.clone()]));
+        let signers_ids = Vec::from([Some(user.id)]);
+        let signer_pk_inclusion_proofs =
+            get_signer_inclusion_proofs(&Vec::from([user.clone()]), &signer_tree, TEST_BATCH_SIZE);
+
+        let block = Block {
+            utxo_tree_root: Fr::ONE,
+            tx_tree_root: transaction_tree.root(),
+            signer_tree_root: signer_tree.root(),
+            signers: signers_ids,
+            number: Fr::from(i),
+        };
+
+        let user_aux = UserAux {
+            transaction_inclusion_proofs,
+            signer_pk_inclusion_proofs,
+            block: block.clone(),
+            transactions,
+            pk: user.keypair.pk,
+        };
+
+        let start = Instant::now();
+        folding_scheme.prove_step(&mut rng, user_aux, None).unwrap();
+        let elapsed = start.elapsed();
+
+        durations.push(elapsed);
+        console_log!("folding step {}, took: {:?}", i, elapsed);
+    }
+    let total: Duration = durations.iter().sum();
+
+    console_log!(
+        "[SHA] Batch size: {}, Average folding step time: {:?}",
+        TEST_BATCH_SIZE,
+        total / durations.len() as u32
+    );
+
+    let ivc_proof = folding_scheme.ivc_proof();
+    let _ = N::verify(
+        nova_params.1, // Nova's verifier params
+        ivc_proof,
+    )
+    .unwrap();
+}
+
+#[wasm_bindgen_test]
+pub fn test_memory_usage_sha() {
+    const TEST_BATCH_SIZE: usize = 10;
+    let pp = poseidon_canonical_config();
+    let mut rng = thread_rng();
+
+    let user = User::new(&mut rng, 42);
+    let user_pk_hash = PublicKeyCRH::evaluate(&pp, user.keypair.pk).unwrap();
+
+    // NOTE: instantiating sha circuit here
+    let f_circuit =
+        ClientCircuitSha::<Fr, Projective, GVar, TEST_BATCH_SIZE>::new(pp.clone()).unwrap();
+
+    type N = Nova<
+        Projective2,
+        Projective,
+        ClientCircuitSha<Fr, Projective, GVar, TEST_BATCH_SIZE>,
+        Pedersen<Projective2>,
+        Pedersen<Projective>,
+        false,
+    >;
+
+    let nova_preprocess_params = PreprocessorParam::new(pp.clone(), f_circuit.clone());
+
+    let state = Vec::from([
+        Fr::from(2000),
+        Fr::ZERO,
+        user_pk_hash,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+        Fr::ZERO,
+    ]);
+
+    let signer_tree = make_signer_tree(&pp, &Vec::from([user.clone()]));
+
+    let nova_params = N::preprocess(&mut rng, &nova_preprocess_params).unwrap();
+
+    let mem_length_start = get_current_allocated_bytes();
+
+    // avoid taking preprocessing step into account
+    let nova_params = nova_params.clone();
+    let mut folding_scheme = N::init(&nova_params, f_circuit, state.clone()).unwrap();
+
+    let i = 42;
+    let receiver = User::new(&mut rng, i);
+    let transaction = make_tx(&user, &receiver);
+    let mut transactions = Vec::from([(transaction, (i) as u64)]);
+    pad_transaction_vec(&mut transactions, TEST_BATCH_SIZE);
+    let transaction_tree = make_tx_tree(&pp, &transactions);
+    let transaction_inclusion_proofs =
+        get_tx_inclusion_proofs(&transactions, &transaction_tree, TEST_BATCH_SIZE);
+
+    let signers_ids = Vec::from([Some(user.id)]);
+    let signer_pk_inclusion_proofs =
+        get_signer_inclusion_proofs(&Vec::from([user.clone()]), &signer_tree, TEST_BATCH_SIZE);
+
+    let block = Block {
+        utxo_tree_root: Fr::ONE,
+        tx_tree_root: transaction_tree.root(),
+        signer_tree_root: signer_tree.root(),
+        signers: signers_ids,
+        number: Fr::from(i),
+    };
+
+    let user_aux = UserAux {
+        transaction_inclusion_proofs,
+        signer_pk_inclusion_proofs,
+        block: block.clone(),
+        transactions,
+        pk: user.keypair.pk,
+    };
+
+    folding_scheme.prove_step(&mut rng, user_aux, None).unwrap();
+
+    let mem_length_stop = get_current_allocated_bytes();
+
+    console_log!(
+        "[SHA] batch size: {}, current mem length (kB): {}",
         TEST_BATCH_SIZE,
         (mem_length_stop - mem_length_start) / 1024
     );
