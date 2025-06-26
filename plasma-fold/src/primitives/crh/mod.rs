@@ -257,7 +257,6 @@ pub mod tests {
                 UTXO::dummy(),
                 UTXO::dummy(),
             ],
-            nonce: Nonce(0),
         };
         let tx_b = Transaction {
             inputs: [
@@ -272,7 +271,6 @@ pub mod tests {
                 UTXO::dummy(),
                 UTXO::dummy(),
             ],
-            nonce: Nonce(0),
         };
         let a = TransactionCRH::evaluate(&pp, &tx_a).unwrap();
         let b = TransactionCRH::evaluate(&pp, &tx_b).unwrap();

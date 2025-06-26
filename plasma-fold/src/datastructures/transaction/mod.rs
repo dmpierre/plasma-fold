@@ -24,7 +24,6 @@ pub mod constraints;
 pub struct Transaction<C: CurveGroup> {
     pub inputs: [UTXO<C>; TX_IO_SIZE],
     pub outputs: [UTXO<C>; TX_IO_SIZE],
-    pub nonce: Nonce,
 }
 
 impl<C: CurveGroup> Default for Transaction<C> {
@@ -32,7 +31,6 @@ impl<C: CurveGroup> Default for Transaction<C> {
         Transaction {
             inputs: [UTXO::dummy(); TX_IO_SIZE],
             outputs: [UTXO::dummy(); TX_IO_SIZE],
-            nonce: Nonce(0),
         }
     }
 }
@@ -59,7 +57,6 @@ impl<F: PrimeField, C: CurveGroup<BaseField = F>> Into<Vec<F>> for &Transaction<
             arr.push(y);
             arr.push(iszero);
         }
-        arr.push(F::from(self.nonce.0));
         arr
     }
 }
@@ -72,7 +69,6 @@ impl<F: PrimeField, C: CurveGroup> Into<Vec<F>> for Transaction<C> {
             .chain(&self.outputs)
             .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.is_dummy)])
             .collect::<Vec<_>>();
-        arr.push(F::from(self.nonce.0));
         arr
     }
 }
@@ -87,7 +83,6 @@ impl<C: CurveGroup> Transaction<C> {
     pub fn is_valid(
         &self,
         sender: Option<PublicKey<C>>,
-        nonce: Option<Nonce>,
     ) -> Result<(), TransactionError> {
         let sender = sender.unwrap_or(self.inputs[0].pk);
         if self
@@ -113,13 +108,6 @@ impl<C: CurveGroup> Transaction<C> {
                 .sum::<u64>()
         {
             return Err(TransactionError::InvalidAmounts);
-        }
-
-        if nonce.is_some() && nonce != Some(self.nonce) {
-            return Err(TransactionError::InvalidNonce(
-                nonce.unwrap().0, // we can unwrap safely, because of `is_some`
-                self.nonce.0,
-            ));
         }
         Ok(())
     }
@@ -307,7 +295,6 @@ pub mod tests {
             .map(|i| Transaction {
                 inputs: [UTXO::new(PublicKey::default(), 10); TX_IO_SIZE],
                 outputs: [UTXO::new(PublicKey::default(), 10); TX_IO_SIZE],
-                nonce: Nonce(i),
             })
             .collect::<Vec<Transaction<Projective>>>();
 

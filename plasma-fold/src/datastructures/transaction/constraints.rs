@@ -44,7 +44,6 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
                 arr.push(p);
             }
         }
-        arr.push(self.nonce.to_fp()?);
         Ok(arr)
     }
 }
@@ -57,7 +56,6 @@ pub struct TransactionVar<
 > {
     pub inputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
     pub outputs: [UTXOVar<F, C, CVar>; TX_IO_SIZE],
-    pub nonce: UInt64<F>,
 }
 
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
@@ -73,7 +71,6 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         let Transaction {
             inputs,
             outputs,
-            nonce,
         } = f.borrow();
         Ok(Self {
             inputs: Vec::new_variable(cs.clone(), || Ok(&inputs[..]), mode)?
@@ -82,7 +79,6 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
             outputs: Vec::new_variable(cs.clone(), || Ok(&outputs[..]), mode)?
                 .try_into()
                 .unwrap(),
-            nonce: UInt64::new_variable(cs, || Ok(nonce.0), mode)?,
         })
     }
 }
@@ -117,7 +113,6 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
     pub fn enforce_valid(
         &self,
         sender: &PublicKeyVar<C, CVar>,
-        nonce: Option<NonceVar<F>>,
     ) -> Result<(), SynthesisError> {
         for i in &self.inputs {
             i.pk.key
@@ -131,9 +126,6 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
             sum -= o.is_dummy.select(&FpVar::zero(), &o.amount)?;
         }
         sum.enforce_equal(&FpVar::zero())?;
-        if let Some(nonce) = nonce {
-            self.nonce.enforce_equal(&nonce)?;
-        }
         Ok(())
     }
 

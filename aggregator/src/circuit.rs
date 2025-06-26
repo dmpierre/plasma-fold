@@ -299,7 +299,7 @@ impl<
         let mut tx_root = z_i[2].clone();
         let tx_root_final = z_i[3].clone();
         let mut signer_root = z_i[4].clone();
-        let mut signer_nonce_acc = z_i[5].clone();
+        let mut signer_acc = z_i[5].clone();
         let mut deposit_acc = z_i[6].clone();
         let mut withdrawal_acc = z_i[7].clone();
 
@@ -316,7 +316,7 @@ impl<
                 signature,
             } = inputs;
 
-            tx.enforce_valid(&sender_pk, None)?;
+            tx.enforce_valid(&sender_pk)?;
 
             let (tx_root_old, tx_root_new) = tx_tree_update_proof.update_root(
                 &pp,
@@ -399,14 +399,11 @@ impl<
             signer_root_old.conditional_enforce_equal(&signer_root, &tx_validity)?;
             signer_root = tx_validity.select(&signer_root_new, &signer_root)?;
 
-            signer_nonce_acc = Sha256Gadget::digest(
+            signer_acc = Sha256Gadget::digest(
                 &[
-                    signer_nonce_acc.to_bytes_le()?,
+                    signer_acc.to_bytes_le()?,
                     tx_validity
                         .select(&sender_pk.key, &CVar::zero())?
-                        .to_bytes_le()?,
-                    tx_validity
-                        .select(&tx.nonce, &UInt64::constant(0))?
                         .to_bytes_le()?,
                 ]
                 .concat(),
@@ -439,7 +436,7 @@ impl<
             tx_root,
             tx_root_final,
             signer_root,
-            signer_nonce_acc,
+            signer_acc,
             deposit_acc,
             withdrawal_acc,
         ])
@@ -473,7 +470,7 @@ mod tests {
     };
     use plasma_fold::datastructures::{keypair::SecretKey, noncemap::Nonce};
 
-    const B: usize = 4;
+    const B: usize = 1;
 
     #[test]
     fn test_num_constraints_transfer_only_mode() {
@@ -561,7 +558,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
@@ -577,7 +573,6 @@ mod tests {
                     UTXO::new(users[1].keypair.pk, 30),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 2 (30) -> User 3 (10) + User 4 (20)
@@ -593,7 +588,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
@@ -609,7 +603,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
@@ -625,7 +618,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
         ];
 

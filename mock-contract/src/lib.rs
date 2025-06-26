@@ -87,7 +87,7 @@ impl<C: CurveGroup> MockContract<C> {
         let tx_root_final = block.tx_tree_root;
         let signer_root = block.signer_tree_root;
 
-        let mut signer_nonce_acc = C::BaseField::zero();
+        let mut signer_acc = C::BaseField::zero();
         for &index in &block.signers {
             let pk = if let Some(i) = index {
                 self.pks[i as usize].key
@@ -95,18 +95,12 @@ impl<C: CurveGroup> MockContract<C> {
                 C::zero()
             };
             let affine = pk.into_affine();
-            let nonce = if let Some(i) = index {
-                self.nonces[i as usize]
-            } else {
-                Nonce(0)
-            };
-            signer_nonce_acc = Sha256::digest(
+            signer_acc = Sha256::digest(
                 [
-                    signer_nonce_acc.into_bigint().to_bytes_le(),
+                    signer_acc.into_bigint().to_bytes_le(),
                     affine.x().unwrap_or_default().into_bigint().to_bytes_le(),
                     affine.y().unwrap_or_default().into_bigint().to_bytes_le(),
                     vec![affine.is_zero() as u8],
-                    nonce.0.to_le_bytes().to_vec(),
                 ]
                 .concat(),
             )[..31]
@@ -155,7 +149,7 @@ impl<C: CurveGroup> MockContract<C> {
             tx_root,
             tx_root_final,
             signer_root,
-            signer_nonce_acc,
+            signer_acc,
             deposit_acc,
             withdrawal_acc,
         ]

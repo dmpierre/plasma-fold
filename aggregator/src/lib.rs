@@ -47,7 +47,6 @@ pub struct AggregatorState<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>>
     pub current_utxo_index: usize,
     pub transactions: Vec<Transaction<C>>,
     pub transaction_tree: TransactionTree<TransactionTreeConfig<C>>,
-    pub nonces: HashMap<C, Nonce>,
     pub deposits: Vec<(PublicKey<C>, u64)>,
     pub withdrawals: Vec<(PublicKey<C>, u64)>,
     pub signer_tree: SignerTree<SignerTreeConfig<C>>,
@@ -68,7 +67,6 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
             current_utxo_index: 0,
             transactions: vec![],
             transaction_tree: TransactionTree::blank(&config, &config),
-            nonces: HashMap::new(),
             signer_tree: SignerTree::blank(&config, &config),
             config,
             height: 0,
@@ -99,15 +97,13 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
         inputs: Vec<(PublicKey<C>, Transaction<C>)>,
     ) -> Result<(), TransactionError> {
         for (sender, tx) in inputs {
-            let nonce = self.nonces.entry(sender.key).or_insert(Nonce(0));
-            tx.is_valid(Some(sender), Some(*nonce))?;
+            tx.is_valid(Some(sender))?;
             self.tx_tree_update_proofs.push(
                 self.transaction_tree
                     .update_and_prove(self.transactions.len() as u64, &tx)
                     .map_err(|_| TransactionError::TransactionTreeFailure)?,
             );
             self.transactions.push(tx);
-            nonce.0 += 1;
         }
 
         Ok(())
@@ -420,7 +416,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
@@ -436,7 +431,6 @@ mod tests {
                     UTXO::new(users[1].keypair.pk, 30),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 2 (30) -> User 3 (10) + User 4 (20)
@@ -452,7 +446,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
@@ -468,7 +461,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
@@ -484,7 +476,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
         ];
 
@@ -514,7 +505,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(1),
             },
             Transaction {
                 // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
@@ -530,7 +520,6 @@ mod tests {
                     UTXO::new(users[1].keypair.pk, 30),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(1),
             },
             Transaction {
                 // User 2 (30) -> User 3 (10) + User 4 (20)
@@ -546,7 +535,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(1),
             },
             Transaction {
                 // User 3 (40) + User 3 (10) -> User 4 (20) + User 3 (30)
@@ -562,7 +550,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(1),
             },
             Transaction {
                 // User 4 (20) + User 4 (20) -> Contract (30) + Contract (10)
@@ -578,78 +565,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(1),
-            },
-        ];
-
-        advance_epoch(
-            &mut rng,
-            &config,
-            &mut aggregator,
-            &users,
-            &mut contract_state,
-            &transactions,
-        );
-    }
-
-    #[should_panic]
-    #[test]
-    fn test_aggregator_native_invalid_nonce() {
-        // testing whether providing an invalid nonce makes the aggregator fail
-        let mut rng = &mut thread_rng();
-        let n_users = 4; // includes aggregator
-        let (config, mut contract_state, mut aggregator, users) =
-            aggregator_setup::<G1Projective>(rng, n_users);
-
-        let transactions = vec![
-            Transaction {
-                // Contract (80) + Contract (20) -> User 1 (100)
-                inputs: [
-                    UTXO::new(users[0].keypair.pk, 80),
-                    UTXO::new(users[0].keypair.pk, 20),
-                    UTXO::dummy(),
-                    UTXO::dummy(),
-                ],
-                outputs: [
-                    UTXO::new(users[1].keypair.pk, 100),
-                    UTXO::dummy(),
-                    UTXO::dummy(),
-                    UTXO::dummy(),
-                ],
-                nonce: Nonce(0),
-            },
-            Transaction {
-                // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
-                inputs: [
-                    UTXO::new(users[1].keypair.pk, 100),
-                    UTXO::dummy(),
-                    UTXO::dummy(),
-                    UTXO::dummy(),
-                ],
-                outputs: [
-                    UTXO::new(users[2].keypair.pk, 30),
-                    UTXO::new(users[3].keypair.pk, 40),
-                    UTXO::new(users[1].keypair.pk, 30),
-                    UTXO::dummy(),
-                ],
-                // NOTE: Incorrect nonce, InvalidNonce
-                nonce: Nonce(42),
-            },
-            Transaction {
-                // User 2 (30) -> User 3 (10)
-                inputs: [
-                    UTXO::new(users[2].keypair.pk, 30),
-                    UTXO::dummy(),
-                    UTXO::dummy(),
-                    UTXO::dummy(),
-                ],
-                outputs: [
-                    UTXO::new(users[3].keypair.pk, 10),
-                    UTXO::new(users[3].keypair.pk, 20),
-                    UTXO::dummy(),
-                    UTXO::dummy(),
-                ],
-                nonce: Nonce(0),
             },
         ];
 
@@ -687,7 +602,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
@@ -704,7 +618,6 @@ mod tests {
                     UTXO::new(users[1].keypair.pk, 40),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 2 (30) -> User 3 (10)
@@ -720,7 +633,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
         ];
 
@@ -758,7 +670,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 1 (100) -> User 2 (30) + User 3 (40) + User 1 (30)
@@ -775,7 +686,6 @@ mod tests {
                     UTXO::new(users[1].keypair.pk, 10),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
             Transaction {
                 // User 2 (30) -> User 3 (10)
@@ -791,7 +701,6 @@ mod tests {
                     UTXO::dummy(),
                     UTXO::dummy(),
                 ],
-                nonce: Nonce(0),
             },
         ];
 

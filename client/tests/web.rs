@@ -72,7 +72,6 @@ pub fn make_tx(sender: &User<Projective>, receiver: &User<Projective>) -> Transa
             UTXO::dummy(),
             UTXO::dummy(),
         ],
-        nonce: sender.nonce,
     }
 }
 
