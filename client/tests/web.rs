@@ -195,9 +195,9 @@ pub fn get_signer_inclusion_proofs(
     signer_pk_inclusion_proofs
 }
 
-pub const TEST_BATCH_SIZE: usize = 10;
+pub const TEST_BATCH_SIZE: usize = 5;
 
-// #[wasm_bindgen_test]
+#[wasm_bindgen_test]
 pub fn test_send_and_receive_transaction() {
     let mut rng = thread_rng();
     let cs = ConstraintSystem::<Fr>::new_ref();
@@ -313,7 +313,7 @@ pub fn test_send_and_receive_transaction() {
     assert_eq!(updated_receiver_state[6].value().unwrap(), Fr::from(2)); // prev processed tx index
 }
 
-// #[wasm_bindgen_test]
+#[wasm_bindgen_test]
 pub fn test_lower_block_number() {
     const TEST_BATCH_SIZE: usize = 2;
     let mut rng = thread_rng();
@@ -379,7 +379,7 @@ pub fn test_lower_block_number() {
     assert!(!cs.is_satisfied().unwrap());
 }
 
-// #[wasm_bindgen_test]
+#[wasm_bindgen_test]
 pub fn test_lower_transaction_index() {
     pub const TEST_BATCH_SIZE: usize = 2;
     let mut rng = thread_rng();
@@ -448,7 +448,7 @@ pub fn test_lower_transaction_index() {
     assert!(!cs.is_satisfied().unwrap());
 }
 
-// #[wasm_bindgen_test]
+#[wasm_bindgen_test]
 pub fn test_stricly_lower_transaction_index() {
     pub const TEST_BATCH_SIZE: usize = 4;
     let mut rng = thread_rng();
@@ -532,7 +532,7 @@ pub fn test_stricly_lower_transaction_index() {
     assert!(!cs.is_satisfied().unwrap());
 }
 
-// #[wasm_bindgen_test]
+#[wasm_bindgen_test]
 pub fn test_run_fold_steps() {
     let pp = poseidon_canonical_config();
     let mut rng = thread_rng();
@@ -605,12 +605,12 @@ pub fn test_run_fold_steps() {
         let elapsed = start.elapsed();
 
         durations.push(elapsed);
-        console_log!("folding step {}, took: {:?}", i, elapsed);
+        console_log!("[POSEIDON] folding step {}, took: {:?}", i, elapsed);
     }
     let total: Duration = durations.iter().sum();
 
     console_log!(
-        "Batch size: {}, Average folding step time: {:?}",
+        "[POSEIDON] batch size: {}, Average folding step time: {:?}",
         TEST_BATCH_SIZE,
         total / durations.len() as u32
     );
@@ -631,6 +631,10 @@ pub fn get_current_allocated_bytes() -> u64 {
 }
 
 // #[wasm_bindgen_test]
+// NOTE: for running memory usage tests, we recommend choosing either the sha or the poseidon
+// circuit version. Otherwise, wasm will already have allocated memory from the other circuit
+// running, which would report inaccurate memory usage numbers.
+// TODO: improve this
 pub fn test_memory_usage() {
     let pp = poseidon_canonical_config();
     let mut rng = thread_rng();
@@ -708,7 +712,7 @@ pub fn test_memory_usage() {
     let mem_length_stop = get_current_allocated_bytes();
 
     console_log!(
-        "batch size: {}, current mem length (kB): {}",
+        "[POSEIDON] batch size: {}, current mem length (kB): {}",
         TEST_BATCH_SIZE,
         (mem_length_stop - mem_length_start) / 1024
     );
@@ -723,7 +727,7 @@ pub fn test_memory_usage() {
 
 #[wasm_bindgen_test]
 pub fn test_sha_constraints() {
-    const TEST_BATCH_SIZE: usize = 10;
+    const TEST_BATCH_SIZE: usize = 5;
     let mut rng = thread_rng();
     let cs = ConstraintSystem::<Fr>::new_ref();
     let pp = poseidon_canonical_config();
@@ -786,7 +790,7 @@ pub fn test_sha_constraints() {
         .unwrap();
     assert!(cs.is_satisfied().unwrap());
     console_log!(
-        "batchsize: {}, n_constraints sender circuit: {}",
+        "[POSEIDON] batch size: {}, n_constraints sender circuit: {}",
         TEST_BATCH_SIZE,
         cs.num_constraints()
     );
@@ -794,7 +798,7 @@ pub fn test_sha_constraints() {
 
 #[wasm_bindgen_test]
 pub fn test_run_fold_steps_sha() {
-    const TEST_BATCH_SIZE: usize = 10;
+    const TEST_BATCH_SIZE: usize = 5;
     let pp = poseidon_canonical_config();
     let mut rng = thread_rng();
 
@@ -867,7 +871,7 @@ pub fn test_run_fold_steps_sha() {
         let elapsed = start.elapsed();
 
         durations.push(elapsed);
-        console_log!("folding step {}, took: {:?}", i, elapsed);
+        console_log!("[SHA] folding step {}, took: {:?}", i, elapsed);
     }
     let total: Duration = durations.iter().sum();
 
@@ -887,7 +891,7 @@ pub fn test_run_fold_steps_sha() {
 
 #[wasm_bindgen_test]
 pub fn test_memory_usage_sha() {
-    const TEST_BATCH_SIZE: usize = 10;
+    const TEST_BATCH_SIZE: usize = 5;
     let pp = poseidon_canonical_config();
     let mut rng = thread_rng();
 

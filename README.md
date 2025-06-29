@@ -43,5 +43,5 @@ Tests for PlasmaFold's datastructures and aggregator run natively. Client tests 
 ```
 $ cargo test -r -p plasma-fold # datastructures tests
 $ cargo test -r -p aggregator # aggregator tests
-$ cd client && wasm-pack test -r --chrome --headless # client tests
+$ cd client && wasm-pack test -r --chrome # client tests, open developer console to see mem consumption and step times
 ```

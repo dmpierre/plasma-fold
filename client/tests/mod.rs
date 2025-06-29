@@ -45,10 +45,6 @@ pub mod tests {
         let pp_size =
             pp.serialized_size(Compress::Yes) + pp.poseidon_config.serialized_size(Compress::Yes);
 
-        let vp_size = vp.serialized_size(Compress::Yes)
-            + vp.r1cs.serialized_size(Compress::Yes)
-            + vp.cf_r1cs.serialized_size(Compress::Yes);
-
         println!(
             "Batch size: {}, total circuit size: {}, params size: {} {} {} {}",
             TEST_BATCH_SIZE,
