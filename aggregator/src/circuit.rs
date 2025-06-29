@@ -5,6 +5,7 @@ use ark_crypto_primitives::{
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ec::CurveGroup;
+#[allow(unused_imports)]
 use ark_ff::{BigInteger, PrimeField, Zero};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},

@@ -8,7 +8,7 @@ plasma-fold = { path = "../plasma-fold/" }
 folding-schemes = { workspace = true }
 ark-r1cs-std = { workspace = true }
 ark-ff = { workspace = true }
-ark-relations = { workspace = true, default-features = false}
+ark-relations = { workspace = true }
 ark-crypto-primitives = { workspace = true, features = ["r1cs", "crh", "sponge"] }
 ark-bn254 = { workspace = true, features = ["r1cs"] }
 ark-grumpkin = { workspace = true, features = ["r1cs"] }
