@@ -1,7 +1,6 @@
 // Define the various CRH used in PlasmaFold
 use crate::datastructures::{
-    block::Block, keypair::PublicKey, noncemap::Nonce, transaction::Transaction, user::UserId,
-    utxo::UTXO,
+    block::Block, keypair::PublicKey, noncemap::Nonce, transaction::Transaction, utxo::UTXO,
 };
 use ark_crypto_primitives::{
     crh::{poseidon::CRH, CRHScheme},
@@ -101,7 +100,7 @@ impl<F: PrimeField + Absorb> CRHScheme for NonceCRH<F> {
     ) -> Result<Self::Output, Error> {
         let nonce: &Nonce = input.borrow();
         let input = F::from(nonce.0);
-        Ok(CRH::evaluate(parameters, [input])?)
+        CRH::evaluate(parameters, [input])
     }
 }
 
@@ -142,7 +141,7 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>> CRHScheme for UTXOCRH<C> {
             y,
             iszero,
         ];
-        Ok(CRH::evaluate(parameters, input)?)
+        CRH::evaluate(parameters, input)
     }
 }
 
@@ -155,7 +154,7 @@ impl<F: PrimeField + Absorb> CRHScheme for BlockCRH<F> {
     type Output = F;
     type Parameters = PoseidonConfig<F>;
 
-    fn setup<R: Rng>(r: &mut R) -> Result<Self::Parameters, Error> {
+    fn setup<R: Rng>(_r: &mut R) -> Result<Self::Parameters, Error> {
         todo!()
     }
 
@@ -170,7 +169,7 @@ impl<F: PrimeField + Absorb> CRHScheme for BlockCRH<F> {
             block.signer_tree_root,
             F::from(block.height as u64),
         ];
-        Ok(CRH::evaluate(parameters, input)?)
+        CRH::evaluate(parameters, input)
     }
 }
 
@@ -190,7 +189,6 @@ pub mod tests {
     use crate::{
         datastructures::{
             keypair::{constraints::PublicKeyVar, KeyPair, PublicKey},
-            noncemap::Nonce,
             transaction::{constraints::TransactionVar, Transaction},
             user::User,
             utxo::UTXO,
@@ -218,13 +216,10 @@ pub mod tests {
             };
             let public_key = PublicKey { key };
             let public_key_var =
-                PublicKeyVar::<Projective, GVar>::new_witness(
-                    cs.clone(),
-                    || Ok(public_key.clone()),
-                )
-                .unwrap();
+                PublicKeyVar::<Projective, GVar>::new_witness(cs.clone(), || Ok(public_key))
+                    .unwrap();
 
-            let res1 = PublicKeyCRH::evaluate(&pp, &public_key).unwrap();
+            let res1 = PublicKeyCRH::evaluate(&pp, public_key).unwrap();
             let res2 = PublicKeyVarCRH::evaluate(&pp_var, &public_key_var).unwrap();
 
             assert_eq!(res1, res2.value().unwrap());

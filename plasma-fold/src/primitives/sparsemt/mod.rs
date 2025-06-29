@@ -21,7 +21,7 @@ pub enum SparseMTError {
 
 impl Display for SparseMTError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SparseMTError");
+        write!(f, "SparseMTError")?;
         Ok(())
     }
 }
@@ -39,7 +39,7 @@ impl ark_std::error::Error for SparseMTError {
         self.source()
     }
 
-    fn provide<'a>(&'a self, request: &mut std::error::Request<'a>) {
+    fn provide<'a>(&'a self, _request: &mut std::error::Request<'a>) {
         todo!()
     }
 }
@@ -115,7 +115,7 @@ impl<
 
             let mut prev = claimed_leaf_hash;
             // Check levels between leaf level and root.
-            for &(ref left_hash, ref right_hash) in &self.path {
+            for (left_hash, right_hash) in &self.path {
                 // Check if the previous hash matches the correct current hash.
                 if &prev != left_hash && &prev != right_hash {
                     return Ok(false);
@@ -165,7 +165,7 @@ impl<
             let mut prev = claimed_leaf_hash;
             let mut prev_index = tree_index;
             // Check levels between leaf level and root.
-            for &(ref left_hash, ref right_hash) in &self.path {
+            for (left_hash, right_hash) in &self.path {
                 // Check if the previous hash matches the correct current hash.
                 if prev_index % 2 == 1 {
                     if &prev != left_hash {
@@ -263,7 +263,7 @@ impl<
             tree: BTreeMap::new(),
             leaf_hash_params: leaf_hash_params.clone(),
             two_to_one_hash_params: two_to_one_hash_params.clone(),
-            root: Some(empty_hashes[(P::HEIGHT - 1) as usize].clone()),
+            root: Some(empty_hashes[(P::HEIGHT - 1) as usize]),
             empty_hashes,
         }
     }
@@ -293,7 +293,7 @@ impl<
         for (i, leaf) in leaves.iter() {
             tree.insert(
                 last_level_index + *i,
-                P::LeafHash::evaluate(&leaf_hash_params, leaf)?,
+                P::LeafHash::evaluate(leaf_hash_params, leaf)?,
             );
         }
 
@@ -309,12 +309,12 @@ impl<
                 let left_index = left_child(*current_index);
                 let right_index = right_child(*current_index);
 
-                let mut left_hash = empty_hashes[level as usize].clone();
-                let mut right_hash = empty_hashes[level as usize].clone();
+                let mut left_hash = empty_hashes[level as usize];
+                let mut right_hash = empty_hashes[level as usize];
 
                 if tree.contains_key(&left_index) {
                     match tree.get(&left_index) {
-                        Some(x) => left_hash = x.clone(),
+                        Some(x) => left_hash = *x,
                         _ => {
                             return Err(Error::GenericError(Box::new(SparseMTError::GenericError)))
                         } // TODO: change this to smthing
@@ -324,7 +324,7 @@ impl<
 
                 if tree.contains_key(&right_index) {
                     match tree.get(&right_index) {
-                        Some(x) => right_hash = x.clone(),
+                        Some(x) => right_hash = *x,
                         _ => {
                             return Err(Error::GenericError(Box::new(SparseMTError::GenericError)))
                         } // TODO:  change this to smthing better
@@ -334,7 +334,7 @@ impl<
                 // Compute Hash(left || right).
                 tree.insert(
                     *current_index,
-                    P::TwoToOneHash::evaluate(&two_to_one_hash_params, &left_hash, &right_hash)?,
+                    P::TwoToOneHash::evaluate(two_to_one_hash_params, &left_hash, &right_hash)?,
                 );
             }
 
@@ -347,11 +347,10 @@ impl<
             }
         }
 
-        let root_hash;
-        match tree.get(&0) {
-            Some(x) => root_hash = (*x).clone(),
+        let root_hash = match tree.get(&0) {
+            Some(x) => *x,
             _ => return Err(Error::GenericError(Box::new(SparseMTError::GenericError))), // TODO: change this to smthing better
-        }
+        };
 
         Ok(MerkleSparseTree {
             tree,
@@ -364,7 +363,7 @@ impl<
 
     #[inline]
     pub fn root(&self) -> P::InnerDigest {
-        self.root.clone().unwrap()
+        self.root.unwrap()
     }
 
     /// generate a membership proof (does not check the data point)
@@ -380,19 +379,19 @@ impl<
         while !is_root(current_node) {
             let sibling_node = sibling(current_node).unwrap();
 
-            let mut current_hash = empty_hashes_iter.next().unwrap().clone();
-            let mut sibling_hash = current_hash.clone();
+            let mut current_hash = *empty_hashes_iter.next().unwrap();
+            let mut sibling_hash = current_hash;
 
             if self.tree.contains_key(&current_node) {
                 match self.tree.get(&current_node) {
-                    Some(x) => current_hash = x.clone(),
+                    Some(x) => current_hash = *x,
                     _ => return Err(Error::GenericError(Box::new(SparseMTError::GenericError))), // TODO: change this
                 }
             }
 
             if self.tree.contains_key(&sibling_node) {
                 match self.tree.get(&sibling_node) {
-                    Some(x) => sibling_hash = x.clone(),
+                    Some(x) => sibling_hash = *x,
                     _ => return Err(Error::GenericError(Box::new(SparseMTError::GenericError))), // TODO: change this
                 }
             }
@@ -495,12 +494,12 @@ impl<
                 let left_index = left_child(*current_index);
                 let right_index = right_child(*current_index);
 
-                let mut left_hash = self.empty_hashes[level as usize].clone();
-                let mut right_hash = self.empty_hashes[level as usize].clone();
+                let mut left_hash = self.empty_hashes[level as usize];
+                let mut right_hash = self.empty_hashes[level as usize];
 
                 if self.tree.contains_key(&left_index) {
                     match self.tree.get(&left_index) {
-                        Some(x) => left_hash = x.clone(),
+                        Some(x) => left_hash = *x,
                         _ => {
                             return Ok(false);
                         }
@@ -509,7 +508,7 @@ impl<
 
                 if self.tree.contains_key(&right_index) {
                     match self.tree.get(&right_index) {
-                        Some(x) => right_hash = x.clone(),
+                        Some(x) => right_hash = *x,
                         _ => {
                             return Ok(false);
                         }
@@ -626,10 +625,10 @@ fn gen_empty_hashes<
     for _ in 1..=n {
         empty_hash = <P::TwoToOneHash as TwoToOneCRHScheme>::evaluate(
             two_to_one_hash_params,
-            empty_hash.clone(),
-            empty_hash.clone(),
+            empty_hash,
+            empty_hash,
         )?;
-        empty_hashes.push(empty_hash.clone());
+        empty_hashes.push(empty_hash);
     }
 
     Ok(empty_hashes)
@@ -661,12 +660,12 @@ mod test {
         let tree = UTXOMerkleTree::new(leaf_hash_params, two_to_one_hash_params, leaves).unwrap();
         let root = tree.root();
         for (i, leaf) in leaves.iter() {
-            let proof = tree.generate_proof(*i, &leaf).unwrap();
+            let proof = tree.generate_proof(*i, leaf).unwrap();
             assert!(proof
-                .verify(leaf_hash_params, two_to_one_hash_params, &root, &leaf)
+                .verify(leaf_hash_params, two_to_one_hash_params, &root, leaf)
                 .unwrap());
             assert!(proof
-                .verify_with_index(leaf_hash_params, two_to_one_hash_params, &root, &leaf, *i)
+                .verify_with_index(leaf_hash_params, two_to_one_hash_params, &root, leaf, *i)
                 .unwrap());
         }
 
@@ -699,12 +698,12 @@ mod test {
         let tree = UTXOMerkleTree::new(leaf_hash_params, two_to_one_hash_params, leaves).unwrap();
         let root = Fr::zero();
         for (i, leaf) in leaves.iter() {
-            let proof = tree.generate_proof(*i, &leaf).unwrap();
+            let proof = tree.generate_proof(*i, leaf).unwrap();
             assert!(proof
-                .verify(leaf_hash_params, two_to_one_hash_params, &root, &leaf)
+                .verify(leaf_hash_params, two_to_one_hash_params, &root, leaf)
                 .unwrap());
             assert!(proof
-                .verify_with_index(leaf_hash_params, two_to_one_hash_params, &root, &leaf, *i)
+                .verify_with_index(leaf_hash_params, two_to_one_hash_params, &root, leaf, *i)
                 .unwrap());
         }
     }
@@ -734,9 +733,9 @@ mod test {
 
             match old_leaf_option {
                 Some(old_leaf) => {
-                    let old_leaf_membership_proof = tree.generate_proof(*i, &old_leaf).unwrap();
-                    let update_proof = tree.update_and_prove(*i, &new_leaf).unwrap();
-                    let new_leaf_membership_proof = tree.generate_proof(*i, &new_leaf).unwrap();
+                    let old_leaf_membership_proof = tree.generate_proof(*i, old_leaf).unwrap();
+                    let update_proof = tree.update_and_prove(*i, new_leaf).unwrap();
+                    let new_leaf_membership_proof = tree.generate_proof(*i, new_leaf).unwrap();
                     let new_root = tree.root.unwrap();
 
                     assert!(old_leaf_membership_proof
@@ -744,7 +743,7 @@ mod test {
                             leaf_hash_params,
                             two_to_one_hash_params,
                             &old_root,
-                            &old_leaf,
+                            old_leaf,
                             *i
                         )
                         .unwrap());
@@ -754,7 +753,7 @@ mod test {
                                 leaf_hash_params,
                                 two_to_one_hash_params,
                                 &new_root,
-                                &old_leaf,
+                                old_leaf,
                                 *i
                             )
                             .unwrap())
@@ -764,7 +763,7 @@ mod test {
                             leaf_hash_params,
                             two_to_one_hash_params,
                             &new_root,
-                            &new_leaf,
+                            new_leaf,
                             *i
                         )
                         .unwrap());
@@ -774,7 +773,7 @@ mod test {
                                 leaf_hash_params,
                                 two_to_one_hash_params,
                                 &new_root,
-                                &old_leaf,
+                                old_leaf,
                                 *i
                             )
                             .unwrap())
@@ -786,15 +785,15 @@ mod test {
                             two_to_one_hash_params,
                             &old_root,
                             &new_root,
-                            &old_leaf,
-                            &new_leaf,
+                            old_leaf,
+                            new_leaf,
                             *i
                         )
                         .unwrap());
                 }
                 None => {
-                    let update_proof = tree.update_and_prove(*i, &new_leaf).unwrap();
-                    let new_leaf_membership_proof = tree.generate_proof(*i, &new_leaf).unwrap();
+                    let update_proof = tree.update_and_prove(*i, new_leaf).unwrap();
+                    let new_leaf_membership_proof = tree.generate_proof(*i, new_leaf).unwrap();
                     let new_root = tree.root.unwrap();
 
                     assert!(new_leaf_membership_proof
@@ -802,7 +801,7 @@ mod test {
                             leaf_hash_params,
                             two_to_one_hash_params,
                             &new_root,
-                            &new_leaf,
+                            new_leaf,
                             *i
                         )
                         .unwrap());
@@ -813,7 +812,7 @@ mod test {
                             &old_root,
                             &new_root,
                             &UTXO::default(),
-                            &new_leaf,
+                            new_leaf,
                             *i
                         )
                         .unwrap());

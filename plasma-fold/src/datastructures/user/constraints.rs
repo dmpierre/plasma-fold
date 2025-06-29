@@ -22,7 +22,7 @@ impl<C: CurveGroup> AllocVar<User<C>, C::ScalarField> for UserVar<C> {
             FpVar::new_variable(cs.clone(), || Ok(C::ScalarField::from(user.balance)), mode)?;
         let nonce =
             FpVar::new_variable(cs.clone(), || Ok(C::ScalarField::from(user.nonce.0)), mode)?;
-        let acc = FpVar::new_variable(cs.clone(), || Ok(C::ScalarField::from(user.acc)), mode)?;
+        let acc = FpVar::new_variable(cs.clone(), || Ok(user.acc), mode)?;
         Ok(Self {
             state: Vec::from([balance, nonce, acc]),
         })

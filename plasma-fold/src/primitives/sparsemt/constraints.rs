@@ -1,6 +1,6 @@
 use ark_crypto_primitives::{
     crh::{
-        poseidon::{constraints::TwoToOneCRHGadget, TwoToOneCRH, CRH},
+        poseidon::{constraints::TwoToOneCRHGadget, TwoToOneCRH},
         CRHSchemeGadget, TwoToOneCRHSchemeGadget,
     },
     merkle_tree::{constraints::ConfigGadget, Config},
@@ -17,8 +17,6 @@ use ark_r1cs_std::{
 use ark_r1cs_std::{prelude::ToBitsGadget, select::CondSelectGadget};
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use std::{borrow::Borrow, ops::Not};
-
-use crate::primitives::crh::UTXOCRH;
 
 use super::{MerkleSparseTreePath, MerkleSparseTreeTwoPaths, SparseConfig};
 
@@ -90,7 +88,7 @@ impl<
         // proof.
         // let leaf_bits = leaf.to_bytes()?;
         let leaf_hash =
-            <P::LeafHash as CRHSchemeGadget<MP::LeafHash, F>>::evaluate(leaf_hash_params, &leaf)?;
+            <P::LeafHash as CRHSchemeGadget<MP::LeafHash, F>>::evaluate(leaf_hash_params, leaf)?;
         // let leaf_hash = CRHVar::hash_bytes(parameters, &leaf_bits)?;
 
         // Check if leaf is one of the bottom-most siblings.
@@ -110,7 +108,7 @@ impl<
 
         // Check levels between leaf level and root.
         let mut previous_hash = leaf_hash;
-        for &(ref left_hash, ref right_hash) in self.path.iter() {
+        for (left_hash, right_hash) in self.path.iter() {
             // Check if the previous_hash matches the correct current hash.
             let previous_is_left =
                 Boolean::new_witness(ark_relations::ns!(cs, "previous_is_left"), || {
@@ -187,7 +185,7 @@ impl<
         let mut previous_hash = leaf_hash;
         let index_bits = index.to_bits_le()?;
 
-        for (i, &(ref left_hash, ref right_hash)) in self.path.iter().enumerate() {
+        for (i, (left_hash, right_hash)) in self.path.iter().enumerate() {
             // Check if the previous_hash matches the correct current hash.
             let previous_is_left = index_bits[i].clone().not();
 
@@ -351,7 +349,7 @@ impl<MP: SparseConfig, F: PrimeField, P: SparseConfigGadget<MP, F>>
         let cs = ns.cs();
 
         let mut path = Vec::new();
-        for &(ref l, ref r) in f()?.borrow().path.iter() {
+        for (l, r) in f()?.borrow().path.iter() {
             let l_hash = P::InnerDigest::new_variable(
                 ark_relations::ns!(cs, "l_child"),
                 || Ok(l.clone()),
@@ -395,6 +393,7 @@ mod test {
     use crate::datastructures::utxo::constraints::{UTXOTreeConfigGadget, UTXOVar};
     use crate::datastructures::utxo::{UTXOTreeConfig, UTXO};
     use crate::primitives::crh::constraints::UTXOVarCRH;
+    use crate::primitives::crh::UTXOCRH;
     use crate::primitives::sparsemt::MerkleSparseTree;
     use ark_bn254::Fr;
     use ark_crypto_primitives::crh::poseidon::constraints::CRHParametersVar;
@@ -423,8 +422,8 @@ mod test {
         let pp_var_constraints = cs.num_constraints();
         let mut satisfied = true;
         for (i, leaf) in leaves.iter() {
-            let proof = tree.generate_proof(*i, &leaf).unwrap();
-            assert!(proof.verify(&pp, &pp, &root, &leaf).unwrap());
+            let proof = tree.generate_proof(*i, leaf).unwrap();
+            assert!(proof.verify(&pp, &pp, &root, leaf).unwrap());
 
             // Allocate Merkle Tree Root
             let root = <HG as CRHSchemeGadget<H, Fr>>::OutputVar::new_witness(
@@ -510,23 +509,15 @@ mod test {
 
         for (i, new_leaf) in new_leaves.iter() {
             let old_root = tree.root.unwrap();
-            let update_proof = tree.update_and_prove(*i, &new_leaf).unwrap();
-            let new_leaf_membership_proof = tree.generate_proof(*i, &new_leaf).unwrap();
+            let update_proof = tree.update_and_prove(*i, new_leaf).unwrap();
+            let new_leaf_membership_proof = tree.generate_proof(*i, new_leaf).unwrap();
             let new_root = tree.root.unwrap();
 
             assert!(update_proof
-                .verify(
-                    &pp,
-                    &pp,
-                    &old_root,
-                    &new_root,
-                    &old_leaves[i],
-                    &new_leaf,
-                    *i
-                )
+                .verify(&pp, &pp, &old_root, &new_root, &old_leaves[i], new_leaf, *i)
                 .unwrap());
             assert!(new_leaf_membership_proof
-                .verify_with_index(&pp, &pp, &new_root, &new_leaf, *i)
+                .verify_with_index(&pp, &pp, &new_root, new_leaf, *i)
                 .unwrap());
 
             // Allocate Merkle Tree Root
@@ -613,7 +604,7 @@ mod test {
 
         let mut new_leaves = BTreeMap::new();
         for i in 1..4u64 {
-            new_leaves.insert(i as u64, UTXO::new(PublicKey::default(), i * 100));
+            new_leaves.insert(i, UTXO::new(PublicKey::default(), i * 100));
         }
         let n_constraints = generate_merkle_tree_and_test_update(&old_leaves, &new_leaves);
         println!("good_root_update_test n constraints: {}", n_constraints);

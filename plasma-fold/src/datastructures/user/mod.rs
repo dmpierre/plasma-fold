@@ -49,7 +49,7 @@ impl<
         m: &[F2],
         rng: &mut impl Rng,
     ) -> Result<Signature<F>, Error> {
-        Ok(self.keypair.sk.sign::<C>(pp, m, rng)?)
+        self.keypair.sk.sign::<C>(pp, m, rng)
     }
 
     pub fn spend_transaction(&mut self, tx: Transaction<C>) {

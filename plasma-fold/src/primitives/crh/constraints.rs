@@ -9,7 +9,7 @@ use ark_crypto_primitives::{
 };
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
-use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar, R1CSVar};
+use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar};
 
 use crate::datastructures::{
     block::constraints::BlockVar, keypair::constraints::PublicKeyVar,
@@ -27,6 +27,12 @@ pub struct TransactionVarCRH<F: PrimeField, C: CurveGroup, CVar: CurveVar<C, F>>
 
 pub struct NonceVarCRH<F: PrimeField> {
     _f: PhantomData<F>,
+}
+
+impl<F: PrimeField, C: CurveGroup, CVar: CurveVar<C, F>> Default for TransactionVarCRH<F, C, CVar> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<F: PrimeField, C: CurveGroup, CVar: CurveVar<C, F>> TransactionVarCRH<F, C, CVar> {
@@ -51,7 +57,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
         let elements: Vec<FpVar<F>> = input.try_into()?;
-        Ok(CRHGadget::evaluate(parameters, &elements)?)
+        CRHGadget::evaluate(parameters, &elements)
     }
 }
 
@@ -64,7 +70,7 @@ impl<F: PrimeField + Absorb> CRHSchemeGadget<NonceCRH<F>, F> for NonceVarCRH<F> 
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
-        Ok(CRHGadget::evaluate(parameters, [input.to_fp()?].as_slice())?)
+        CRHGadget::evaluate(parameters, [input.to_fp()?].as_slice())
     }
 }
 
@@ -88,7 +94,7 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>, CVar: CurveVar<C, C::BaseFie
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
         let key = input.key.to_constraint_field()?;
-        Ok(CRHGadget::evaluate(parameters, &key)?)
+        CRHGadget::evaluate(parameters, &key)
     }
 }
 

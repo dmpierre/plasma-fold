@@ -12,7 +12,6 @@ use ark_r1cs_std::{
     eq::EqGadget,
     fields::{fp::FpVar, FieldVar},
     groups::CurveVar,
-    prelude::Boolean, uint64::UInt64,
 };
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
@@ -20,7 +19,6 @@ use ark_std::borrow::Borrow;
 use crate::{
     datastructures::{
         keypair::{constraints::PublicKeyVar, PublicKey},
-        noncemap::constraints::NonceVar,
         utxo::constraints::UTXOVar,
         TX_IO_SIZE,
     },

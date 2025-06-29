@@ -7,7 +7,7 @@ use ark_crypto_primitives::{
     sponge::Absorb,
 };
 use ark_ec::CurveGroup;
-use ark_r1cs_std::{alloc::AllocVar, fields::FieldVar, prelude::Boolean, select::CondSelectGadget};
+use ark_r1cs_std::{alloc::AllocVar, prelude::Boolean, select::CondSelectGadget};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use core::cmp::Ordering;
 use folding_schemes::folding::traits::Dummy;
@@ -104,7 +104,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, const N_TX_PER_FOLD_S
         let block = Block::default();
 
         let transactions = (0..N_TX_PER_FOLD_STEP)
-            .map(|_| (Transaction::default(), 0 as u64))
+            .map(|_| (Transaction::default(), 0_u64))
             .collect::<Vec<_>>();
 
         Self {
@@ -259,12 +259,12 @@ impl<
         {
             // are we processing a dummy transaction? (dummy transactions are used to fill up the vector)
             // if we are processing a dummy transaction, we do not enforce any of the conditions
-            let transaction_hash = TransactionVarCRH::evaluate(&self.pp, &transaction)?;
+            let transaction_hash = TransactionVarCRH::evaluate(&self.pp, transaction)?;
             let is_regular_transaction = transaction_hash.is_neq(&dummy_transaction_hash)?;
 
             // prev tx index should be strictly lower than the currently processed transaction
             let prev_tx_index_is_lower =
-                &prev_processed_tx_index.is_cmp(&transaction_index, Ordering::Less, false)?;
+                &prev_processed_tx_index.is_cmp(transaction_index, Ordering::Less, false)?;
             prev_tx_index_is_lower
                 .conditional_enforce_equal(&Boolean::Constant(true), &is_regular_transaction)?;
 
@@ -274,8 +274,8 @@ impl<
                 &self.pp,
                 &self.pp,
                 &aux.block.tx_tree_root,
-                &transaction,
-                &transaction_index,
+                transaction,
+                transaction_index,
                 &is_regular_transaction,
             )?;
 

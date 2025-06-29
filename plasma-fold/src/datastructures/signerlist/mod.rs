@@ -20,7 +20,7 @@ use super::keypair::PublicKey;
 pub mod constraints;
 
 pub type SignerList = Vec<u32>;
-pub type SignerTree<P: Config> = MerkleSparseTree<P>;
+pub type SignerTree<P> = MerkleSparseTree<P>;
 
 #[derive(Clone, Debug)]
 pub struct SignerTreeConfig<C: CurveGroup> {

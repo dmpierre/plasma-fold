@@ -12,8 +12,8 @@ use super::{keypair::PublicKey, user::UserId};
 
 pub mod constraints;
 
-pub type PublicKeyMap<C: CurveGroup> = Map<UserId, PublicKey<C>>;
-pub type PublicKeyTree<P: Config> = MerkleTree<P>;
+pub type PublicKeyMap<C> = Map<UserId, PublicKey<C>>;
+pub type PublicKeyTree<P> = MerkleTree<P>;
 
 pub struct PublicKeyTreeConfig<C: CurveGroup<BaseField: PrimeField + Absorb>> {
     _c: PhantomData<C>,
@@ -51,7 +51,7 @@ pub mod tests {
 
     #[test]
     pub fn test_public_key_tree_circuit() {
-        let n_users = (2 as usize).pow(10);
+        let n_users = 2_usize.pow(10);
         let mut rng = thread_rng();
         let pp = poseidon_canonical_config::<Fr>();
         let cs = ConstraintSystem::<Fr>::new_ref();

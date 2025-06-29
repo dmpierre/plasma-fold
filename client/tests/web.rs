@@ -131,7 +131,7 @@ pub fn make_tx_tree(
     pp: &PoseidonConfig<Fr>,
     transactions: &Vec<(Transaction<Projective>, u64)>,
 ) -> TransactionTree<TransactionTreeConfig<Projective>> {
-    let leaves = BTreeMap::from_iter(transactions.into_iter().map(|(tx, i)| (*i, tx.clone())));
+    let leaves = BTreeMap::from_iter(transactions.iter().map(|(tx, i)| (*i, tx.clone())));
     TransactionTree::new(pp, pp, &leaves).unwrap()
 }
 
@@ -376,7 +376,7 @@ pub fn test_lower_block_number() {
         .update_balance(cs.clone(), sender_state_var, sender_aux_var)
         .unwrap();
 
-    assert_eq!(cs.is_satisfied().unwrap(), false);
+    assert!(!cs.is_satisfied().unwrap());
 }
 
 // #[wasm_bindgen_test]
@@ -445,7 +445,7 @@ pub fn test_lower_transaction_index() {
         .update_balance(cs.clone(), sender_state_var, sender_aux_var)
         .unwrap();
 
-    assert_eq!(cs.is_satisfied().unwrap(), false);
+    assert!(!cs.is_satisfied().unwrap());
 }
 
 // #[wasm_bindgen_test]
@@ -529,7 +529,7 @@ pub fn test_stricly_lower_transaction_index() {
     let _ = receiver_circuit
         .update_balance(cs.clone(), updated_receiver_state, receiver_aux_var)
         .unwrap();
-    assert_eq!(cs.is_satisfied().unwrap(), false);
+    assert!(!cs.is_satisfied().unwrap());
 }
 
 // #[wasm_bindgen_test]
@@ -616,7 +616,7 @@ pub fn test_run_fold_steps() {
     );
 
     let ivc_proof = folding_scheme.ivc_proof();
-    let _ = N::verify(
+    N::verify(
         nova_params.1, // Nova's verifier params
         ivc_proof,
     )
@@ -714,7 +714,7 @@ pub fn test_memory_usage() {
     );
 
     let ivc_proof = folding_scheme.ivc_proof();
-    let _ = N::verify(
+    N::verify(
         nova_params.1, // Nova's verifier params
         ivc_proof,
     )
@@ -878,7 +878,7 @@ pub fn test_run_fold_steps_sha() {
     );
 
     let ivc_proof = folding_scheme.ivc_proof();
-    let _ = N::verify(
+    N::verify(
         nova_params.1, // Nova's verifier params
         ivc_proof,
     )
@@ -971,7 +971,7 @@ pub fn test_memory_usage_sha() {
     );
 
     let ivc_proof = folding_scheme.ivc_proof();
-    let _ = N::verify(
+    N::verify(
         nova_params.1, // Nova's verifier params
         ivc_proof,
     )

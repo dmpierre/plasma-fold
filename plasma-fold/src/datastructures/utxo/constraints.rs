@@ -16,7 +16,7 @@ use ark_r1cs_std::{
 use ark_relations::r1cs::{Namespace, SynthesisError};
 
 use crate::{
-    datastructures::keypair::{constraints::PublicKeyVar, PublicKey},
+    datastructures::keypair::constraints::PublicKeyVar,
     primitives::{crh::constraints::UTXOVarCRH, sparsemt::constraints::SparseConfigGadget},
 };
 

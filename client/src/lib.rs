@@ -10,7 +10,6 @@ use ark_crypto_primitives::{
             constraints::{Sha256Gadget, UnitVar},
             Sha256,
         },
-        TwoToOneCRHSchemeGadget,
     },
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
@@ -23,7 +22,6 @@ use folding_schemes::{frontend::FCircuit, Error};
 use plasma_fold::primitives::accumulator::constraints::{
     PoseidonAccumulatorVar, Sha256AccumulatorVar,
 };
-mod utils;
 
 pub mod circuits;
 

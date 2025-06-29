@@ -16,7 +16,7 @@ impl<F: PrimeField + BigInteger> Sha256Accumulator<F> {
         // drop last byte
         // not ideal, but equiv to sha224 with sha256's' IV?
         let (_, value) = value.split_last().unwrap();
-        self.0 = F::from_le_bytes_mod_order(&value);
+        self.0 = F::from_le_bytes_mod_order(value);
         Ok(())
     }
 }

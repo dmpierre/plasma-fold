@@ -7,11 +7,8 @@ use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_r1cs_std::prelude::Boolean;
-use ark_r1cs_std::prelude::ToBitsGadget;
 use ark_relations::r1cs::SynthesisError;
-use std::borrow::Borrow;
 use std::marker::PhantomData;
-use std::path::PathBuf;
 
 use ark_crypto_primitives::merkle_tree::Config;
 use ark_ff::PrimeField;
@@ -89,7 +86,7 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> TreeGadgets<P, F, PG> {
         expected_id: &FpVar<F>,
     ) -> Result<(), SynthesisError> {
         let computed_id = Boolean::<F>::le_bits_to_fp(&path.get_leaf_position())?;
-        Ok(computed_id.enforce_equal(&expected_id)?)
+        computed_id.enforce_equal(expected_id)
     }
 
     pub fn update_and_check(
@@ -106,13 +103,13 @@ impl<P: Config, F: PrimeField, PG: ConfigGadget<P, F>> TreeGadgets<P, F, PG> {
     where
         <PG as ConfigGadget<P, F>>::Leaf: Sized,
     {
-        Ok(update_proof.path.update_and_check(
+        update_proof.path.update_and_check(
             leaf_params,
             two_to_one_params,
             &update_proof.prev_root,
             &update_proof.new_root,
             &update_proof.prev_leaf,
             &update_proof.new_leaf,
-        )?)
+        )
     }
 }

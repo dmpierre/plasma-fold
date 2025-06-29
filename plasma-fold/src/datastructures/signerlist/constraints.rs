@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 use crate::{
     datastructures::keypair::constraints::PublicKeyVar,
     primitives::{crh::constraints::PublicKeyVarCRH, sparsemt::constraints::SparseConfigGadget},
-    SIGNER_TREE_HEIGHT, TX_TREE_HEIGHT,
+    SIGNER_TREE_HEIGHT,
 };
 
 use super::SignerTreeConfig;

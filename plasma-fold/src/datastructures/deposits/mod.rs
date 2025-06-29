@@ -12,7 +12,7 @@ use crate::primitives::crh::TransactionCRH;
 
 use super::transaction::Transaction;
 
-pub type DepositTree<P: Config> = MerkleTree<P>;
+pub type DepositTree<P> = MerkleTree<P>;
 
 pub struct DepositTreeConfig<C: CurveGroup> {
     _c: PhantomData<C>,

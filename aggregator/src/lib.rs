@@ -2,13 +2,9 @@
 #![feature(iter_array_chunks)]
 extern crate test;
 
-use std::{
-    array::from_fn,
-    collections::{BTreeMap, HashMap},
-};
+use std::{array::from_fn, collections::HashMap};
 
 use ark_crypto_primitives::{
-    crh::CRHScheme,
     sponge::{poseidon::PoseidonConfig, Absorb},
     Error,
 };
@@ -20,18 +16,13 @@ use plasma_fold::{
     datastructures::{
         block::Block,
         keypair::{PublicKey, Signature},
-        noncemap::{Nonce, NonceTree, NonceTreeConfig},
         signerlist::{SignerTree, SignerTreeConfig},
         transaction::{Transaction, TransactionTree, TransactionTreeConfig},
-        user::{UserId, ROLLUP_CONTRACT_ID},
         utxo::{UTXOTree, UTXOTreeConfig, UTXO},
         TX_IO_SIZE,
     },
     errors::TransactionError,
-    primitives::{
-        crh::TransactionCRH,
-        sparsemt::{MerkleSparseTreePath, MerkleSparseTreeTwoPaths},
-    },
+    primitives::sparsemt::{MerkleSparseTreePath, MerkleSparseTreeTwoPaths},
 };
 
 use crate::circuit::AggregatorCircuitInputs;
@@ -265,10 +256,11 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> AggregatorState<F, C>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_bn254::{Fq, Fr, G1Projective};
+    use ark_bn254::G1Projective;
     use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
     use mock_contract::L1Account;
+    use plasma_fold::datastructures::noncemap::Nonce;
     use plasma_fold::datastructures::{
         keypair::{KeyPair, SecretKey},
         user::User,

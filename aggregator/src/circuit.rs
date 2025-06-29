@@ -1,11 +1,7 @@
 use std::{array, marker::PhantomData};
 
 use ark_crypto_primitives::{
-    crh::{
-        poseidon::constraints::{CRHGadget, CRHParametersVar},
-        sha256::constraints::{Sha256Gadget, UnitVar},
-        CRHSchemeGadget,
-    },
+    crh::{poseidon::constraints::CRHParametersVar, sha256::constraints::Sha256Gadget},
     sponge::{poseidon::PoseidonConfig, Absorb},
 };
 use ark_ec::CurveGroup;
@@ -17,7 +13,6 @@ use ark_r1cs_std::{
     fields::{fp::FpVar, FieldVar},
     groups::CurveVar,
     prelude::Boolean,
-    uint64::UInt64,
     uint8::UInt8,
     R1CSVar,
 };
@@ -36,20 +31,11 @@ use plasma_fold::{
         },
         utxo::{
             constraints::{UTXOTreeConfigGadget, UTXOVar},
-            UTXOTree, UTXOTreeConfig, UTXO,
+            UTXOTreeConfig, UTXO,
         },
         TX_IO_SIZE,
     },
-    primitives::{
-        accumulator::{
-            constraints::{Accumulator, Sha256AccumulatorVar},
-            Sha256Accumulator,
-        },
-        sparsemt::{
-            constraints::{MerkleSparseTreePathVar, MerkleSparseTreeTwoPathsVar},
-            MerkleSparseTreeTwoPaths,
-        },
-    },
+    primitives::sparsemt::{constraints::MerkleSparseTreeTwoPathsVar, MerkleSparseTreeTwoPaths},
 };
 
 pub trait ToNBitsGadget<F: PrimeField> {
@@ -64,7 +50,7 @@ impl<F: PrimeField> ToNBitsGadget<F> for FpVar<F> {
 
         let bits = Vec::new_variable_with_inferred_mode(cs, || Ok(&bits[..n]))?;
 
-        Boolean::le_bits_to_fp(&bits)?.enforce_equal(&self)?;
+        Boolean::le_bits_to_fp(&bits)?.enforce_equal(self)?;
 
         Ok(bits)
     }
@@ -292,7 +278,7 @@ impl<
         external_inputs: Self::ExternalInputsVar, // inputs that are not part of the state
     ) -> Result<Vec<FpVar<C::BaseField>>, SynthesisError> {
         let pp = CRHParametersVar::new_constant(cs.clone(), &self.poseidon_config)?;
-        let contract_pk = PublicKeyVar::<C, CVar>::new_constant(cs.clone(), &self.contract_pk)?;
+        let contract_pk = PublicKeyVar::<C, CVar>::new_constant(cs.clone(), self.contract_pk)?;
 
         let mut step = z_i[0].clone();
         let mut utxo_root = z_i[1].clone();
@@ -453,11 +439,9 @@ mod tests {
     };
 
     use super::*;
-    use ark_bn254::{Fq, Fr, G1Projective as Projective};
-    use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
+    use ark_bn254::{Fr, G1Projective as Projective};
     use ark_ff::UniformRand;
     use ark_grumpkin::{constraints::GVar, Projective as Projective2};
-    use ark_r1cs_std::uint8::UInt8;
     use ark_relations::r1cs::ConstraintSystem;
     use ark_serialize::CanonicalSerialize;
     use ark_std::rand::thread_rng;
@@ -468,7 +452,6 @@ mod tests {
         transcript::poseidon::poseidon_canonical_config,
         FoldingScheme,
     };
-    use plasma_fold::datastructures::{keypair::SecretKey, noncemap::Nonce};
 
     const B: usize = 1;
 

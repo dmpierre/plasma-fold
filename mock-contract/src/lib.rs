@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use ark_crypto_primitives::{
-    crh::sha256::{digest::Digest, Sha256},
-    sponge::Absorb,
-};
+use ark_crypto_primitives::crh::sha256::{digest::Digest, Sha256};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, PrimeField, ToConstraintField, Zero};
 use folding_schemes::{folding::nova::IVCProof, Curve};
@@ -73,7 +70,7 @@ impl<C: CurveGroup> MockContract<C> {
             .or_insert(amount);
     }
 
-    pub fn add_block(&mut self, block: Block<C::BaseField>) {
+    pub fn add_block(&mut self, _block: Block<C::BaseField>) {
         unimplemented!("Unnecessary for now")
     }
 
@@ -157,7 +154,7 @@ impl<C: CurveGroup> MockContract<C> {
 }
 
 impl<C2: Curve> MockContract<C2> {
-    pub fn verify_proof<C1: Curve>(proof: IVCProof<C1, C2>) {
+    pub fn verify_proof<C1: Curve>(_proof: IVCProof<C1, C2>) {
         unimplemented!("Unnecessary for now")
     }
 }

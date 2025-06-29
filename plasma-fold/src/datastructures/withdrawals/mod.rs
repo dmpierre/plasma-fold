@@ -12,7 +12,7 @@ use crate::primitives::crh::TransactionCRH;
 
 use super::transaction::Transaction;
 
-pub type WithdrawTree<P: Config> = MerkleTree<P>;
+pub type WithdrawTree<P> = MerkleTree<P>;
 
 pub struct WithdrawTreeConfig<F: PrimeField, C: CurveGroup> {
     _f: PhantomData<F>,

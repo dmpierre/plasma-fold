@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use super::{keypair::PublicKey, noncemap::Nonce, utxo::UTXO, TX_IO_SIZE};
+use super::{keypair::PublicKey, utxo::UTXO, TX_IO_SIZE};
 use crate::{
     errors::TransactionError,
     primitives::{
@@ -37,14 +37,14 @@ impl<C: CurveGroup> Default for Transaction<C> {
 
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>> Transaction<C> {
     pub fn get_hash(&self, parameters: &PoseidonConfig<F>) -> Result<F, Error> {
-        Ok(TransactionCRH::evaluate(parameters, self)?)
+        TransactionCRH::evaluate(parameters, self)
     }
 }
 
-impl<F: PrimeField, C: CurveGroup<BaseField = F>> Into<Vec<F>> for &Transaction<C> {
-    fn into(self) -> Vec<F> {
+impl<F: PrimeField, C: CurveGroup<BaseField = F>> From<&Transaction<C>> for Vec<F> {
+    fn from(val: &Transaction<C>) -> Self {
         let mut arr = Vec::new();
-        for utxo in self.inputs.iter().chain(&self.outputs) {
+        for utxo in val.inputs.iter().chain(&val.outputs) {
             arr.push(F::from(utxo.amount));
             arr.push(F::from(utxo.is_dummy));
             let point = utxo.pk.key.into_affine();
@@ -61,12 +61,12 @@ impl<F: PrimeField, C: CurveGroup<BaseField = F>> Into<Vec<F>> for &Transaction<
     }
 }
 
-impl<F: PrimeField, C: CurveGroup> Into<Vec<F>> for Transaction<C> {
-    fn into(self) -> Vec<F> {
-        let mut arr = self
+impl<F: PrimeField, C: CurveGroup> From<Transaction<C>> for Vec<F> {
+    fn from(val: Transaction<C>) -> Self {
+        let arr = val
             .inputs
             .iter()
-            .chain(&self.outputs)
+            .chain(&val.outputs)
             .flat_map(|utxo| [F::from(utxo.amount), F::from(utxo.is_dummy)])
             .collect::<Vec<_>>();
         arr
@@ -75,15 +75,12 @@ impl<F: PrimeField, C: CurveGroup> Into<Vec<F>> for Transaction<C> {
 
 impl<C: CurveGroup> AsRef<Transaction<C>> for Transaction<C> {
     fn as_ref(&self) -> &Transaction<C> {
-        &self
+        self
     }
 }
 
 impl<C: CurveGroup> Transaction<C> {
-    pub fn is_valid(
-        &self,
-        sender: Option<PublicKey<C>>,
-    ) -> Result<(), TransactionError> {
+    pub fn is_valid(&self, sender: Option<PublicKey<C>>) -> Result<(), TransactionError> {
         let sender = sender.unwrap_or(self.inputs[0].pk);
         if self
             .inputs
@@ -147,7 +144,6 @@ pub mod tests {
                 constraints::{PublicKeyVar, SignatureVar},
                 PublicKey,
             },
-            noncemap::Nonce,
             transaction::{
                 constraints::{TransactionTreeConfigGadget, TransactionVar},
                 TransactionTree,
@@ -157,13 +153,12 @@ pub mod tests {
             TX_IO_SIZE,
         },
         primitives::{
-            crh::constraints::TransactionVarCRH,
             schnorr::SchnorrGadget,
             sparsemt::constraints::{MerkleSparseTreePathVar, MerkleSparseTreeTwoPathsVar},
         },
     };
     use ark_bn254::Fr;
-    use ark_crypto_primitives::crh::{poseidon::constraints::CRHParametersVar, CRHSchemeGadget};
+    use ark_crypto_primitives::crh::poseidon::constraints::CRHParametersVar;
     use ark_grumpkin::constraints::GVar;
     use ark_grumpkin::Projective;
     use ark_r1cs_std::{
@@ -178,7 +173,7 @@ pub mod tests {
     #[test]
     pub fn test_transaction_tree() {
         let tx_tree_height = 10;
-        let n_transactions = (2 as usize).pow(tx_tree_height);
+        let n_transactions = 2_usize.pow(tx_tree_height);
         let pp = poseidon_canonical_config();
 
         // Build tx tree
@@ -253,7 +248,7 @@ pub mod tests {
         let signature_var = SignatureVar::new_witness(cs.clone(), || Ok(tx_signature)).unwrap();
 
         // check sign(tx)
-        let res = SchnorrGadget::verify::<W, _, _>(
+        SchnorrGadget::verify::<W, _, _>(
             &pp_var,
             &pk_var.key,
             &TryInto::<Vec<_>>::try_into(&tx_var).unwrap(),
@@ -270,8 +265,8 @@ pub mod tests {
 
     #[test]
     pub fn test_initialize_blank_tx_tree_and_update() {
-        let tx_tree_height = 4 as usize;
-        let n_transactions = 1 << tx_tree_height - 1;
+        let tx_tree_height = 4_usize;
+        let n_transactions = 1 << (tx_tree_height - 1);
         let pp = poseidon_canonical_config();
         let empty_leaves = (0..n_transactions)
             .map(|_| Transaction::default())
@@ -281,7 +276,7 @@ pub mod tests {
         let mut tx_tree = TransactionTree::<TransactionTreeConfig<Projective>>::new(
             &pp,
             &pp,
-            &&BTreeMap::from_iter(
+            &BTreeMap::from_iter(
                 empty_leaves
                     .iter()
                     .enumerate()
@@ -292,7 +287,7 @@ pub mod tests {
 
         // initialize transactions received by the aggregator
         let transactions = (0..n_transactions)
-            .map(|i| Transaction {
+            .map(|_i| Transaction {
                 inputs: [UTXO::new(PublicKey::default(), 10); TX_IO_SIZE],
                 outputs: [UTXO::new(PublicKey::default(), 10); TX_IO_SIZE],
             })
@@ -311,7 +306,7 @@ pub mod tests {
                     &prev_root,
                     &new_root,
                     &Transaction::default(),
-                    &tx,
+                    tx,
                     idx as u64,
                 )
                 .unwrap();
@@ -332,13 +327,13 @@ pub mod tests {
             let prev_root_var = FpVar::new_witness(cs.clone(), || Ok(prev_root)).unwrap();
             let new_root_var = FpVar::new_witness(cs.clone(), || Ok(new_root)).unwrap();
             let tx_var = TransactionVar::new_witness(cs.clone(), || Ok(tx)).unwrap();
-            let _ = update_var
+            update_var
                 .check_update(
                     &pp_var,
                     &pp_var,
                     &prev_root_var,
                     &new_root_var,
-                    &TransactionVar::new_constant(cs.clone(), &Transaction::default()).unwrap(),
+                    &TransactionVar::new_constant(cs.clone(), Transaction::default()).unwrap(),
                     &tx_var,
                     &FpVar::constant(Fr::from(idx as u64)),
                 )

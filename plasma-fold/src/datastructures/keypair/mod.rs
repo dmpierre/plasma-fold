@@ -39,7 +39,7 @@ pub struct PublicKey<C: CurveGroup> {
 
 impl<C: CurveGroup> AsRef<PublicKey<C>> for PublicKey<C> {
     fn as_ref(&self) -> &PublicKey<C> {
-        &self
+        self
     }
 }
 
