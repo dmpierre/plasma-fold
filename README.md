@@ -1,4 +1,4 @@
-# PlasmaFold 
+# [PlasmaFold](https://eprint.iacr.org/2025/1300) 
 
 <p align="center">
   <img width="180" alt="plasma-fold" src="https://github.com/user-attachments/assets/c19cbc72-e426-4ac7-b421-331bd76146d6" width="30%" height="30%" />
