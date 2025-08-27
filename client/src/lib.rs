@@ -16,7 +16,7 @@ use ark_crypto_primitives::{
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, groups::CurveVar};
-use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use circuits::{UserAux, UserAuxVar, UserCircuit};
 use folding_schemes::{frontend::FCircuit, Error};
 use plasma_fold::primitives::accumulator::constraints::{

@@ -8,7 +8,7 @@ use ark_crypto_primitives::{
 };
 use ark_ec::CurveGroup;
 use ark_r1cs_std::{alloc::AllocVar, prelude::Boolean, select::CondSelectGadget};
-use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, SynthesisError};
 use core::cmp::Ordering;
 use folding_schemes::folding::traits::Dummy;
 use plasma_fold::{
@@ -142,7 +142,7 @@ impl<
     > AllocVar<UserAux<F, C, N_TX_PER_FOLD_STEP>, F> for UserAuxVar<F, C, CVar>
 {
     fn new_variable<T: std::borrow::Borrow<UserAux<F, C, N_TX_PER_FOLD_STEP>>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
     ) -> Result<Self, SynthesisError> {

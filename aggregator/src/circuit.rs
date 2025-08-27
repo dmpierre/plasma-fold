@@ -15,9 +15,9 @@ use ark_r1cs_std::{
     groups::CurveVar,
     prelude::Boolean,
     uint8::UInt8,
-    R1CSVar,
+    GR1CSVar,
 };
-use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use folding_schemes::frontend::FCircuit;
 use plasma_fold::{
     datastructures::{
@@ -443,7 +443,7 @@ mod tests {
     use ark_bn254::{Fr, G1Projective as Projective};
     use ark_ff::UniformRand;
     use ark_grumpkin::{constraints::GVar, Projective as Projective2};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
     use ark_serialize::CanonicalSerialize;
     use ark_std::rand::thread_rng;
     use folding_schemes::{

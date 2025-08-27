@@ -35,7 +35,7 @@ pub mod tests {
     use ark_ff::UniformRand;
     use ark_grumpkin::{constraints::GVar, Projective};
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 

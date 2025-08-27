@@ -13,7 +13,7 @@ use ark_r1cs_std::{
     fields::{fp::FpVar, FieldVar},
     groups::CurveVar,
 };
-use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
+use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::borrow::Borrow;
 
 use crate::{
@@ -66,10 +66,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
         let f = f()?;
-        let Transaction {
-            inputs,
-            outputs,
-        } = f.borrow();
+        let Transaction { inputs, outputs } = f.borrow();
         Ok(Self {
             inputs: Vec::new_variable(cs.clone(), || Ok(&inputs[..]), mode)?
                 .try_into()
@@ -108,10 +105,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
 impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
     TransactionVar<F, C, CVar>
 {
-    pub fn enforce_valid(
-        &self,
-        sender: &PublicKeyVar<C, CVar>,
-    ) -> Result<(), SynthesisError> {
+    pub fn enforce_valid(&self, sender: &PublicKeyVar<C, CVar>) -> Result<(), SynthesisError> {
         for i in &self.inputs {
             i.pk.key
                 .conditional_enforce_equal(&sender.key, &!&i.is_dummy)?;

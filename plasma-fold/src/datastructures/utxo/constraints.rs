@@ -13,7 +13,7 @@ use ark_r1cs_std::{
     groups::CurveVar,
     prelude::Boolean,
 };
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{Namespace, SynthesisError};
 
 use crate::{
     datastructures::keypair::constraints::PublicKeyVar,

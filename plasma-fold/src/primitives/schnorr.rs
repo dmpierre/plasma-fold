@@ -16,9 +16,9 @@ use ark_r1cs_std::{
     convert::ToBitsGadget,
     fields::fp::FpVar,
     prelude::{Boolean, CurveVar, EqGadget, FieldVar},
-    R1CSVar,
+    GR1CSVar,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 use ark_std::{cmp::max, rand::Rng, UniformRand};
 
 pub struct Schnorr {}
@@ -208,7 +208,7 @@ mod tests {
     use ark_ff::{BigInteger, UniformRand};
     use ark_grumpkin::{constraints::GVar, Projective};
     use ark_r1cs_std::prelude::AllocVar;
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::rand::thread_rng;
     use num::{BigUint, Zero};
 

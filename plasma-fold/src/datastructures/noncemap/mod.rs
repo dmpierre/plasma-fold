@@ -51,7 +51,7 @@ pub mod tests {
     use ark_crypto_primitives::crh::poseidon::constraints::CRHParametersVar;
 
     use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, uint64::UInt64};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::rand::{thread_rng, Rng};
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
 

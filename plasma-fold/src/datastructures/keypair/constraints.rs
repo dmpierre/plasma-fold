@@ -5,8 +5,8 @@ use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::alloc::AllocationMode;
 use ark_r1cs_std::select::CondSelectGadget;
 use ark_r1cs_std::{fields::fp::FpVar, groups::CurveVar, prelude::Boolean};
-use ark_relations::r1cs::Namespace;
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::Namespace;
+use ark_relations::gr1cs::SynthesisError;
 use std::borrow::Borrow;
 use std::marker::PhantomData;
 

@@ -15,7 +15,7 @@ plasma-fold = { path = "../plasma-fold/" }
 ark-ec = { workspace = true }
 ark-ff = { workspace = true }
 ark-std = { workspace = true }
-ark-crypto-primitives = { workspace = true, features = ["r1cs", "crh", "sponge"] }
+ark-crypto-primitives = { workspace = true, features = ["constraints", "crh", "sponge"] }
 ark-bn254 = { workspace = true }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 ark-grumpkin = { workspace = true }

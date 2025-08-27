@@ -2,7 +2,10 @@ use std::marker::PhantomData;
 
 use ark_crypto_primitives::{
     crh::{
-        poseidon::{constraints::{CRHParametersVar, TwoToOneCRHGadget}, TwoToOneCRH},
+        poseidon::{
+            constraints::{CRHParametersVar, TwoToOneCRHGadget},
+            TwoToOneCRH,
+        },
         sha256::{
             constraints::{Sha256Gadget, UnitVar},
             Sha256,
@@ -13,7 +16,7 @@ use ark_crypto_primitives::{
 };
 use ark_ff::PrimeField;
 use ark_r1cs_std::{convert::ToConstraintFieldGadget, fields::fp::FpVar, prelude::ToBytesGadget};
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
 pub trait Accumulator<F: PrimeField, H: TwoToOneCRHScheme, T: TwoToOneCRHSchemeGadget<H, F>> {
     fn update(

@@ -11,10 +11,10 @@ pub struct UserVar<C: CurveGroup> {
 // z_i is a vec of FpVar<F> in sonobe
 impl<C: CurveGroup> AllocVar<User<C>, C::ScalarField> for UserVar<C> {
     fn new_variable<T: std::borrow::Borrow<User<C>>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<C::ScalarField>>,
-        f: impl FnOnce() -> Result<T, ark_relations::r1cs::SynthesisError>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<C::ScalarField>>,
+        f: impl FnOnce() -> Result<T, ark_relations::gr1cs::SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
-    ) -> Result<Self, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<Self, ark_relations::gr1cs::SynthesisError> {
         let res = f()?;
         let user = res.borrow();
         let cs = cs.into().cs();

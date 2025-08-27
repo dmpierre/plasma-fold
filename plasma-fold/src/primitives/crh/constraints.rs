@@ -55,7 +55,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
     fn evaluate(
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
-    ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<Self::OutputVar, ark_relations::gr1cs::SynthesisError> {
         let elements: Vec<FpVar<F>> = input.try_into()?;
         CRHGadget::evaluate(parameters, &elements)
     }
@@ -69,7 +69,7 @@ impl<F: PrimeField + Absorb> CRHSchemeGadget<NonceCRH<F>, F> for NonceVarCRH<F> 
     fn evaluate(
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
-    ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<Self::OutputVar, ark_relations::gr1cs::SynthesisError> {
         CRHGadget::evaluate(parameters, [input.to_fp()?].as_slice())
     }
 }
@@ -92,7 +92,7 @@ impl<C: CurveGroup<BaseField: PrimeField + Absorb>, CVar: CurveVar<C, C::BaseFie
     fn evaluate(
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
-    ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<Self::OutputVar, ark_relations::gr1cs::SynthesisError> {
         let key = input.key.to_constraint_field()?;
         CRHGadget::evaluate(parameters, &key)
     }
@@ -114,7 +114,7 @@ impl<F: PrimeField + Absorb, C: CurveGroup<BaseField = F>, CVar: CurveVar<C, F>>
     fn evaluate(
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
-    ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<Self::OutputVar, ark_relations::gr1cs::SynthesisError> {
         let bool_as_fp: FpVar<F> = input.is_dummy.clone().into();
         let pk_point = input.pk.key.to_constraint_field()?;
         let mut input = Vec::from([input.amount.clone(), bool_as_fp]);
@@ -137,7 +137,7 @@ impl<F: PrimeField + Absorb> CRHSchemeGadget<BlockCRH<F>, F> for BlockVarCRH<F> 
     fn evaluate(
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
-    ) -> Result<Self::OutputVar, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<Self::OutputVar, ark_relations::gr1cs::SynthesisError> {
         CRHGadget::evaluate(
             parameters,
             &[

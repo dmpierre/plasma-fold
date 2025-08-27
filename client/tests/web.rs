@@ -15,8 +15,8 @@ use ark_crypto_primitives::{
 };
 use ark_ff::{AdditiveGroup, Field};
 use ark_grumpkin::{constraints::GVar, Projective};
-use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, R1CSVar};
-use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
+use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar, GR1CSVar};
+use ark_relations::gr1cs::{ConstraintSystem, ConstraintSystemRef};
 use ark_std::rand::thread_rng;
 use client::ClientCircuitSha;
 use client::{

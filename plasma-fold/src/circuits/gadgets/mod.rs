@@ -7,7 +7,7 @@ use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_r1cs_std::prelude::Boolean;
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 use std::marker::PhantomData;
 
 use ark_crypto_primitives::merkle_tree::Config;
@@ -56,7 +56,7 @@ impl<
     > AllocVar<TreeUpdateProof<P>, F> for TreeUpdateProofVar<P, F, PG>
 {
     fn new_variable<T: std::borrow::Borrow<TreeUpdateProof<P>>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<F>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
     ) -> Result<Self, SynthesisError> {

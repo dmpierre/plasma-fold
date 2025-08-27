@@ -13,10 +13,10 @@ pub struct BlockVar<F: PrimeField> {
 
 impl<F: PrimeField> AllocVar<Block<F>, F> for BlockVar<F> {
     fn new_variable<T: std::borrow::Borrow<Block<F>>>(
-        cs: impl Into<ark_relations::r1cs::Namespace<F>>,
-        f: impl FnOnce() -> Result<T, ark_relations::r1cs::SynthesisError>,
+        cs: impl Into<ark_relations::gr1cs::Namespace<F>>,
+        f: impl FnOnce() -> Result<T, ark_relations::gr1cs::SynthesisError>,
         mode: ark_r1cs_std::prelude::AllocationMode,
-    ) -> Result<Self, ark_relations::r1cs::SynthesisError> {
+    ) -> Result<Self, ark_relations::gr1cs::SynthesisError> {
         let cs = cs.into().cs();
         let res = f()?;
         let block = res.borrow();

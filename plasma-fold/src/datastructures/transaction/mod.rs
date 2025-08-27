@@ -165,7 +165,7 @@ pub mod tests {
         alloc::AllocVar,
         fields::{fp::FpVar, FieldVar},
     };
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::rand::thread_rng;
     use folding_schemes::transcript::poseidon::poseidon_canonical_config;
     const W: usize = 32;
