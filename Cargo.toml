@@ -17,22 +17,19 @@ num = "0.4.0"
 thiserror = "2.0.12"
 
 [patch.crates-io]
-ark-ff = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" }  # branch fix/wasm32-parallel-cfg-attributes
-ark-bn254 = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" }  # branch fix/wasm32-parallel-cfg-attributes
-ark-grumpkin = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" }  # branch fix/wasm32-parallel-cfg-attributes
+ark-bn254 = { git = "https://github.com/dmpierre/algebra.git", branch = "fix/wasm32" }
+ark-grumpkin = { git = "https://github.com/dmpierre/algebra.git", branch = "fix/wasm32" }
+ark-ec = { git = "https://github.com/dmpierre/algebra.git", branch = "fix/wasm32" }
+ark-ff = { git = "https://github.com/dmpierre/algebra.git", branch = "fix/wasm32" }
+ark-serialize = { git = "https://github.com/dmpierre/algebra.git", branch = "fix/wasm32" }
 ark-r1cs-std = { git = "https://github.com/flyingnobita/r1cs-std_yelhousni", rev = "b4bab0c" }         # "perf/sw-updated" branch
 ark-relations = { git = "https://github.com/arkworks-rs/snark" }
 ark-crypto-primitives = { git = "https://github.com/flyingnobita/crypto-primitives", rev = "f559264" }
 ark-std = { git = "https://github.com/arkworks-rs/std" }
-ark-serialize = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" }  # branch fix/wasm32-parallel-cfg-attributes
-ark-ec = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" }  # branch fix/wasm32-parallel-cfg-attributes
-ark-poly = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" }  # branch fix/wasm32-parallel-cfg-attributes
 ark-snark = { git = "https://github.com/arkworks-rs/snark" }
 ark-groth16 = { git = "https://github.com/arkworks-rs/groth16", rev = "b3b4a15" }
 
-# Redirect git dependencies
-[patch."https://github.com/arkworks-rs/algebra.git"]
-ark-ff = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" }        # branch fix/wasm32-parallel-cfg-attributes
-ark-ec = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" }        # branch fix/wasm32-parallel-cfg-attributes
-ark-serialize = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" } # branch fix/wasm32-parallel-cfg-attributes
-ark-poly = { git = "https://github.com/flyingnobita/algebra", rev = "e98a8d3" }      # branch fix/wasm32-parallel-cfg-attributes
+[patch."https://github.com/arkworks-rs/algebra"]
+ark-ec = { git = "https://github.com/dmpierre/algebra.git", branch = "fix/wasm32" }
+ark-ff = { git = "https://github.com/dmpierre/algebra.git", branch = "fix/wasm32" }
+ark-serialize = { git = "https://github.com/dmpierre/algebra.git", branch = "fix/wasm32" }
